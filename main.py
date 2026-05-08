@@ -7,7 +7,7 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
-from astrbot.core.message.components import Plain
+from astrbot.core.message.components import Image, Plain
 from astrbot.core.message.message_event_result import MessageChain
 
 from .core.compat import to_thread
@@ -21,6 +21,23 @@ from .core.webapp import WebPanel
 PLUGIN_NAME = "astrbot_plugin_text_world"
 PLUGIN_VERSION = "0.3.3"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
+
+MAP_IMAGE_FILES: tuple[str, ...] = (
+    "academy_city_overview_annotated.png",
+    "academy_city_district7_annotated.png",
+    "academy_city_route_map.png",
+)
+MAP_IMAGE_INTRO = (
+    "\u3010\u5b66\u56ed\u90fd\u5e02\u5730\u56fe\u3011\n"
+    "\u5df2\u53d1\u9001\u56fe\u7247\u7248\u5730\u56fe\uff1a"
+    "\u603b\u89c8\u3001\u7b2c\u4e03\u5b66\u533a\u7ec6\u8282\u3001\u8def\u7ebf\u56fe\u3002"
+)
+MAP_PRIVATE_AMBIGUOUS_TEXT = (
+    "\u68c0\u6d4b\u5230\u4f60\u5728\u591a\u4e2a\u7fa4\u4e16\u754c\u90fd\u6709"
+    "\u89d2\u8272\uff0c\u79c1\u804a\u91cc\u65e0\u6cd5\u5224\u65ad\u8981\u67e5\u770b"
+    "\u54ea\u4e00\u4e2a\u3002"
+)
+MAP_PRIVATE_NO_WORLD_TEXT = "\u6ca1\u6709\u627e\u5230\u5df2\u7ed1\u5b9a\u7684\u7fa4\u4e16\u754c\u3002"
 
 COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "help": ("世界帮助", "文游帮助", "世界菜单"),
@@ -138,7 +155,11 @@ class TextWorldPlugin(Star):
 
     @filter.command("地图", alias={"世界地图"})
     async def map_cmd(self, event: AstrMessageEvent):
-        yield event.plain_result(await self._handle_map(event)).stop_event()
+        result = await self._handle_map_images(event)
+        if result:
+            yield result.stop_event()
+        else:
+            yield event.plain_result(await self._handle_map(event)).stop_event()
 
     @filter.command("待结算", alias={"本轮行动", "行动列表"})
     async def pending(self, event: AstrMessageEvent):
@@ -189,6 +210,14 @@ class TextWorldPlugin(Star):
         event.should_call_llm(False)
         if not command:
             event.stop_event()
+            return
+
+        if command["key"] == "map":
+            result = await self._handle_map_images(event)
+            if result:
+                yield result.stop_event()
+            else:
+                yield event.plain_result(await self._handle_map(event)).stop_event()
             return
 
         msg = await self._handle_group_text_command(event, command["key"])
@@ -362,6 +391,27 @@ class TextWorldPlugin(Star):
         if not group_id:
             return "没有找到已绑定的群世界。" + self._private_binding_hint()
         return await to_thread(self.service.map_text, group_id, self._sender_id(event))
+
+    async def _handle_map_images(self, event: AstrMessageEvent):
+        group_id = await self._command_group_id(event, allow_private_binding=True)
+        if group_id == "__ambiguous__":
+            return event.plain_result(MAP_PRIVATE_AMBIGUOUS_TEXT + self._private_binding_hint())
+        if not group_id:
+            return event.plain_result(MAP_PRIVATE_NO_WORLD_TEXT + self._private_binding_hint())
+
+        map_dir = Path(__file__).resolve().parent / "assets" / "maps"
+        image_paths = [map_dir / name for name in MAP_IMAGE_FILES]
+        missing = [path for path in image_paths if not path.is_file()]
+        if missing:
+            logger.warning(
+                "[TextWorld] map image assets missing: "
+                + ", ".join(str(path) for path in missing)
+            )
+            return None
+
+        chain = [Plain(MAP_IMAGE_INTRO + "\n")]
+        chain.extend(Image.fromFileSystem(str(path)) for path in image_paths)
+        return event.chain_result(chain)
 
     async def _handle_pending(self, event: AstrMessageEvent) -> str:
         group_id = await self._command_group_id(event, allow_private_binding=True)
