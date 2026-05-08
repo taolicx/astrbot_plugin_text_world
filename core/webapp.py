@@ -15,7 +15,7 @@ try:
 except Exception:
     import logging
 
-logger = logging.getLogger("astrbot_plugin_text_world.webapp")
+    logger = logging.getLogger("astrbot_plugin_text_world.webapp")
 
 MAX_BODY_BYTES = 256 * 1024
 
