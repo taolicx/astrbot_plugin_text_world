@@ -10,6 +10,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 
+from .core.compat import to_thread
 from .core.config import TextWorldConfig
 from .core.database import TextWorldDB
 from .core.narrator_v2 import BatchNarrator
@@ -17,7 +18,7 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.3.0"
 
 
 def help_text() -> str:
@@ -57,7 +58,7 @@ class TextWorldPlugin(Star):
         self._settle_locks: dict[str, asyncio.Lock] = {}
 
     async def initialize(self):
-        await asyncio.to_thread(self.db.init, self.cfg.admin_username, self.cfg.admin_password)
+        await to_thread(self.db.init, self.cfg.admin_username, self.cfg.admin_password)
         if self.cfg.web_enabled:
             await self.web.start()
         self._scheduler_task = asyncio.create_task(self._scheduler_loop())
@@ -84,7 +85,7 @@ class TextWorldPlugin(Star):
             yield event.plain_result("请在群聊中使用。").stop_event()
             return
         self._last_event_by_group[group_id] = event
-        world = await asyncio.to_thread(self.service.ensure_world, group_id, self._origin(event))
+        world = await to_thread(self.service.ensure_world, group_id, self._origin(event))
         yield event.plain_result(
             f"学院都市文字世界已开启。当前第 {world['current_round']} 轮。\n后台：http://{self.cfg.web_host}:{self.cfg.web_port}"
         ).stop_event()
@@ -99,7 +100,7 @@ class TextWorldPlugin(Star):
         name, sep, identity = payload.partition("|")
         if not sep:
             name, sep, identity = payload.partition("｜")
-        ok, msg = await asyncio.to_thread(
+        ok, msg = await to_thread(
             self.service.create_character_request,
             group_id,
             self._origin(event),
@@ -117,7 +118,7 @@ class TextWorldPlugin(Star):
             return
         self._last_event_by_group[group_id] = event
         text = self._command_payload(event, ["行动", "文游行动", "提交行动"])
-        ok, msg = await asyncio.to_thread(
+        ok, msg = await to_thread(
             self.service.submit_action,
             group_id,
             self._origin(event),
@@ -132,7 +133,7 @@ class TextWorldPlugin(Star):
         if not group_id:
             yield event.plain_result("请在对应群聊里查看状态。").stop_event()
             return
-        text = await asyncio.to_thread(self.service.get_status_by_qq, group_id, self._sender_id(event))
+        text = await to_thread(self.service.get_status_by_qq, group_id, self._sender_id(event))
         yield event.plain_result(text).stop_event()
 
     @filter.command("地图", alias={"世界地图"})
@@ -141,7 +142,7 @@ class TextWorldPlugin(Star):
         if not group_id:
             yield event.plain_result("请在群里查看地图。").stop_event()
             return
-        text = await asyncio.to_thread(self.service.map_text, group_id, self._sender_id(event))
+        text = await to_thread(self.service.map_text, group_id, self._sender_id(event))
         yield event.plain_result(text).stop_event()
 
     @filter.command("待结算", alias={"本轮行动", "行动列表"})
@@ -150,7 +151,7 @@ class TextWorldPlugin(Star):
         if not group_id:
             yield event.plain_result("请在群里查看待结算信息。").stop_event()
             return
-        text = await asyncio.to_thread(self.service.pending_text, group_id)
+        text = await to_thread(self.service.pending_text, group_id)
         yield event.plain_result(text).stop_event()
 
     @filter.command("签到", alias={"每日签到"})
@@ -159,13 +160,13 @@ class TextWorldPlugin(Star):
         if not group_id:
             yield event.plain_result("请在群里签到。").stop_event()
             return
-        ok, msg = await asyncio.to_thread(self.service.checkin, group_id, self._sender_id(event))
+        ok, msg = await to_thread(self.service.checkin, group_id, self._sender_id(event))
         yield event.plain_result(msg).stop_event()
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     @filter.command("绑定文游私聊", alias={"绑定世界私聊", "文游私聊绑定"})
     async def bind_private(self, event: AstrMessageEvent):
-        count = await asyncio.to_thread(self.service.bind_private, self._sender_id(event), self._origin(event))
+        count = await to_thread(self.service.bind_private, self._sender_id(event), self._origin(event))
         if count <= 0:
             yield event.plain_result("还没有找到你的角色卡，请先在群里提交或让管理员绑定 QQ 号。").stop_event()
             return
@@ -203,10 +204,10 @@ class TextWorldPlugin(Star):
     async def _scheduler_loop(self):
         while True:
             try:
-                due = await asyncio.to_thread(self.service.due_worlds)
+                due = await to_thread(self.service.due_worlds)
                 for world in due:
                     await self._settle_group(world["group_id"], self._last_event_by_group.get(world["group_id"]))
-                daily_due = await asyncio.to_thread(self.service.due_daily_worlds)
+                daily_due = await to_thread(self.service.due_daily_worlds)
                 for world in daily_due:
                     await self._send_daily_status(world)
             except asyncio.CancelledError:
@@ -234,8 +235,8 @@ class TextWorldPlugin(Star):
         force_event: bool = False,
     ) -> str:
         try:
-            result = await asyncio.to_thread(self.service.settle_round, group_id, force_event)
-            provider_id = await self._provider_id(event) if event else self.cfg.default_provider_id
+            result = await to_thread(self.service.settle_round, group_id, force_event)
+            provider_id = await self._provider_id(event) if event else ""
             result = await self.narrator.narrate_round(result, provider_id)
             group_sent = await self._send_group(group_id, result["public_summary"], event)
             private_sent, private_total = await self._send_private_results(group_id, result["private_results"], event)
@@ -252,13 +253,13 @@ class TextWorldPlugin(Star):
             return f"结算失败：{exc}"
 
     async def _send_daily_status(self, world: dict[str, Any]) -> None:
-        statuses = await asyncio.to_thread(self.service.daily_statuses, world["group_id"])
+        statuses = await to_thread(self.service.daily_statuses, world["group_id"])
         sent_count = 0
         for qq_id, text in statuses.items():
             if await self._send_private_by_qq(world["group_id"], qq_id, "【早安状态栏】\n" + text, None):
                 sent_count += 1
         if sent_count or not statuses:
-            await asyncio.to_thread(self.service.mark_daily_sent, world["group_id"])
+            await to_thread(self.service.mark_daily_sent, world["group_id"])
         else:
             logger.warning(f"[TextWorld] daily status for group {world['group_id']} was not marked sent because all private sends failed.")
 
@@ -274,7 +275,7 @@ class TextWorldPlugin(Star):
                 return True
             except Exception as exc:
                 logger.warning(f"[TextWorld] group send via event failed: {exc}")
-        row = await asyncio.to_thread(self.db.fetch_one, "SELECT group_origin FROM worlds WHERE group_id=?", (group_id,))
+        row = await to_thread(self.db.fetch_one, "SELECT group_origin FROM worlds WHERE group_id=?", (group_id,))
         origin = str((row or {}).get("group_origin") or "")
         if origin:
             return await self._send_origin(origin, text)
@@ -299,7 +300,7 @@ class TextWorldPlugin(Star):
         text: str,
         event: AstrMessageEvent | None,
     ) -> bool:
-        row = await asyncio.to_thread(
+        row = await to_thread(
             self.db.fetch_one,
             "SELECT private_origin FROM characters WHERE group_id=? AND qq_id=?",
             (group_id, qq_id),
@@ -333,14 +334,14 @@ class TextWorldPlugin(Star):
 
     async def _provider_id(self, event: AstrMessageEvent | None) -> str:
         if not event:
-            return self.cfg.default_provider_id
+            return self.cfg.provider_for("main")
         try:
             value = await self.context.get_current_chat_provider_id(umo=event.unified_msg_origin)
             if isinstance(value, str) and value:
                 return value
         except Exception:
             pass
-        return self.cfg.default_provider_id
+        return self.cfg.provider_for("main")
 
     def _group_id(self, event: AstrMessageEvent) -> str:
         try:

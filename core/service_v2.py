@@ -467,6 +467,8 @@ class TextWorldService:
                 "history": history,
                 "shop": shop,
                 "npcs": npcs,
+                "worldbook": self.config.worldbook_info(preview_chars=2400 if role == "admin" else 800),
+                "providers": self.config.provider_info(),
             }
 
         return self.db.run(work)

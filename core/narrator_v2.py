@@ -22,7 +22,7 @@ class BatchNarrator:
     async def narrate_round(self, result: dict[str, Any], provider_id: str = "") -> dict[str, Any]:
         if not self.config.enable_llm:
             return result
-        provider_id = provider_id or self.config.default_provider_id
+        provider_id = self.config.provider_for("story", provider_id)
         if not provider_id:
             return result
         payload = {

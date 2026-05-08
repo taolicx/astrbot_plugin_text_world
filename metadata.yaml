@@ -1,10 +1,10 @@
 name: astrbot_plugin_text_world
 display_name: 群文游文字世界
-version: 0.2.0
-description: 学院都市小时制群文游系统，支持群行动、统一结算、一次模型输出拆分、角色审核、前端后台、事件预设、商店背包、签到、NPC记忆基础和早八状态私聊。
+version: 0.3.0
+description: 学院都市小时制群文游系统，支持群行动、统一结算、世界书背景、一次模型输出拆分、角色审核、增强前端后台、事件预设、商店背包、签到、NPC记忆基础和早八状态私聊。
 author: codex
 astrbot_version: ">=4.5.7"
-repo: ""
+repo: "https://github.com/taolicx/astrbot_plugin_text_world"
 support_platforms:
   - aiocqhttp
   - qq_official

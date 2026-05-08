@@ -65,7 +65,25 @@
     "default": true
   },
   "default_provider_id": {
-    "description": "默认 LLM 提供商，后台定时结算没有群会话上下文时会使用它",
+    "description": "兼容旧配置的默认 LLM 提供商；未设置专用模型时会回退到这里",
+    "type": "string",
+    "_special": "select_provider",
+    "default": ""
+  },
+  "main_provider_id": {
+    "description": "主模型 provider，建议选择 Claude 4.6o 这类综合能力强的模型；留空则回退默认提供商",
+    "type": "string",
+    "_special": "select_provider",
+    "default": ""
+  },
+  "story_provider_id": {
+    "description": "剧情/旁白 provider，当前每小时结算润色会优先使用它，建议选择 DeepSeek v4 Pro 这类叙事模型；留空则回退主模型",
+    "type": "string",
+    "_special": "select_provider",
+    "default": ""
+  },
+  "fast_provider_id": {
+    "description": "快速任务 provider，预留给后续反作弊、摘要、轻量判定等低延迟任务，建议选择 v4 Flash；留空则回退主模型",
     "type": "string",
     "_special": "select_provider",
     "default": ""
@@ -73,7 +91,27 @@
   "world_theme": {
     "description": "世界主题说明，会传给大模型作为背景",
     "type": "text",
-    "default": "学院都市，轻剧情、日常探索、偶遇、阵营、传闻和小事件并重。"
+    "default": "学院都市，科学侧都市、学生能力者、日常探索、偶遇、阵营、传闻和公共事件并重。"
+  },
+  "worldbook_enabled": {
+    "description": "是否启用随插件打包的世界书背景；启用后只按下方字数截取节选传给大模型，完整文件不会每轮全部注入",
+    "type": "bool",
+    "default": true
+  },
+  "worldbook_path": {
+    "description": "世界书文件路径；相对路径会从插件目录开始查找",
+    "type": "string",
+    "default": "worldbook/academy_city_worldbook.txt"
+  },
+  "worldbook_prompt_chars": {
+    "description": "每次大模型结算时注入的世界书最大字符数。越大越贴合设定，但 token 消耗越高",
+    "type": "int",
+    "default": 8000,
+    "slider": {
+      "min": 0,
+      "max": 30000,
+      "step": 1000
+    }
   },
   "narrator_prompt": {
     "description": "自定义旁白提示词，留空使用默认文游主持风格",
