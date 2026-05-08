@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>群文游文字世界玩家图文说明书</title>
+  <style>
+    @font-face {
+      font-family: "GuideSans";
+      src: local("Noto Sans SC"), local("Source Han Sans CN"), local("Microsoft YaHei");
+    }
+
+    :root {
+      --ink: #f8fbff;
+      --muted: #b6c4d6;
+      --dim: #7890aa;
+      --panel: rgba(9, 18, 32, 0.84);
+      --panel-strong: rgba(13, 29, 49, 0.94);
+      --line: rgba(141, 215, 255, 0.28);
+      --cyan: #75e5ff;
+      --mint: #9df8c8;
+      --amber: #ffd27d;
+      --pink: #ff9fc5;
+      --violet: #c8b7ff;
+      --red: #ff7f91;
+      --shadow: rgba(0, 0, 0, 0.42);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 48px;
+      background: #071019;
+      color: var(--ink);
+      font-family: GuideSans, "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+      letter-spacing: 0;
+    }
+
+    .sheet {
+      position: relative;
+      width: 1080px;
+      overflow: hidden;
+      margin: 0 auto 64px;
+      padding: 58px;
+      border: 1px solid rgba(149, 220, 255, 0.28);
+      background:
+        linear-gradient(135deg, rgba(11, 25, 42, 0.96), rgba(12, 18, 33, 0.99) 48%, rgba(23, 28, 48, 0.96)),
+        #071019;
+      box-shadow: 0 38px 90px rgba(0, 0, 0, 0.46);
+      isolation: isolate;
+    }
+
+    .sheet::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+      background:
+        linear-gradient(rgba(113, 232, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(113, 232, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(115deg, transparent 0 18%, rgba(117, 229, 255, 0.13) 18.1% 18.5%, transparent 18.6% 46%, rgba(157, 248, 200, 0.12) 46.1% 46.6%, transparent 46.7%),
+        radial-gradient(circle at 78% 10%, rgba(255, 210, 125, 0.18), transparent 22%),
+        radial-gradient(circle at 10% 76%, rgba(117, 229, 255, 0.17), transparent 24%);
+      background-size: 72px 72px, 72px 72px, 100% 100%, 100% 100%, 100% 100%;
+    }
+
+    .sheet::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 250px;
+      z-index: -1;
+      opacity: 0.64;
+      background:
+        linear-gradient(to top, rgba(3, 10, 18, 0.92), transparent 88%),
+        linear-gradient(90deg,
+          transparent 0 4%, rgba(117, 229, 255, 0.18) 4% 5.2%, transparent 5.2% 8%,
+          rgba(255, 210, 125, 0.12) 8% 11%, transparent 11% 14%,
+          rgba(157, 248, 200, 0.14) 14% 15.2%, transparent 15.2% 19%,
+          rgba(255, 159, 197, 0.13) 19% 20.4%, transparent 20.4% 27%,
+          rgba(117, 229, 255, 0.13) 27% 31%, transparent 31% 35%,
+          rgba(200, 183, 255, 0.12) 35% 36.2%, transparent 36.2% 43%,
+          rgba(117, 229, 255, 0.18) 43% 46%, transparent 46% 53%,
+          rgba(255, 210, 125, 0.12) 53% 57%, transparent 57% 64%,
+          rgba(157, 248, 200, 0.14) 64% 67%, transparent 67% 72%,
+          rgba(255, 159, 197, 0.13) 72% 75%, transparent 75% 82%,
+          rgba(117, 229, 255, 0.16) 82% 85%, transparent 85% 100%);
+      background-size: 100% 100%;
+    }
+
+    .card-sheet {
+      min-height: 1440px;
+    }
+
+    .long-sheet {
+      min-height: 3560px;
+    }
+
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 36px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .seal {
+      display: grid;
+      place-items: center;
+      width: 64px;
+      height: 64px;
+      border: 1px solid rgba(117, 229, 255, 0.54);
+      background: rgba(5, 15, 28, 0.76);
+      color: var(--cyan);
+      font-size: 30px;
+      font-weight: 900;
+      box-shadow: 0 0 24px rgba(117, 229, 255, 0.18) inset;
+    }
+
+    .tag {
+      padding: 12px 18px;
+      border: 1px solid rgba(255, 210, 125, 0.38);
+      background: rgba(255, 210, 125, 0.12);
+      color: #ffe4aa;
+      font-size: 22px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 880px;
+      font-size: 76px;
+      line-height: 1.04;
+      font-weight: 950;
+      letter-spacing: 0;
+      text-shadow: 0 10px 28px var(--shadow);
+    }
+
+    .subtitle {
+      margin-top: 24px;
+      max-width: 890px;
+      color: #d7e3f2;
+      font-size: 30px;
+      line-height: 1.58;
+      font-weight: 500;
+    }
+
+    .subtitle strong {
+      color: var(--amber);
+      font-weight: 900;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 310px;
+      gap: 30px;
+      align-items: stretch;
+      margin-top: 42px;
+    }
+
+    .notice {
+      padding: 26px;
+      border: 1px solid rgba(255, 127, 145, 0.38);
+      background: rgba(78, 16, 32, 0.46);
+      box-shadow: 0 18px 38px rgba(0, 0, 0, 0.24);
+    }
+
+    .notice .label,
+    .mini-panel .label {
+      color: var(--amber);
+      font-size: 22px;
+      font-weight: 900;
+      margin-bottom: 12px;
+    }
+
+    .notice p,
+    .mini-panel p {
+      color: #f6dbe2;
+      font-size: 24px;
+      line-height: 1.45;
+      font-weight: 650;
+    }
+
+    .mini-panel {
+      padding: 26px;
+      border: 1px solid rgba(117, 229, 255, 0.28);
+      background: rgba(5, 18, 31, 0.74);
+    }
+
+    .section {
+      margin-top: 46px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 22px;
+      font-size: 38px;
+      font-weight: 950;
+    }
+
+    .num {
+      display: grid;
+      place-items: center;
+      min-width: 62px;
+      height: 62px;
+      border: 1px solid rgba(117, 229, 255, 0.44);
+      background: rgba(117, 229, 255, 0.12);
+      color: var(--cyan);
+      font-size: 26px;
+      font-weight: 950;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .panel {
+      position: relative;
+      padding: 24px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 18px 34px rgba(0, 0, 0, 0.25);
+    }
+
+    .panel.strong {
+      background: var(--panel-strong);
+    }
+
+    .panel h3 {
+      margin-bottom: 14px;
+      color: var(--ink);
+      font-size: 28px;
+      line-height: 1.2;
+      font-weight: 950;
+    }
+
+    .panel p,
+    .panel li {
+      color: #d9e5f1;
+      font-size: 23px;
+      line-height: 1.44;
+      font-weight: 560;
+    }
+
+    .panel small {
+      color: var(--dim);
+      font-size: 18px;
+      line-height: 1.4;
+    }
+
+    .flow {
+      display: grid;
+      gap: 16px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 70px 1fr;
+      gap: 18px;
+      align-items: center;
+      padding: 18px;
+      border: 1px solid rgba(117, 229, 255, 0.25);
+      background: rgba(5, 16, 28, 0.72);
+    }
+
+    .step-index {
+      display: grid;
+      place-items: center;
+      width: 58px;
+      height: 58px;
+      background: rgba(157, 248, 200, 0.15);
+      border: 1px solid rgba(157, 248, 200, 0.45);
+      color: var(--mint);
+      font-size: 24px;
+      font-weight: 950;
+    }
+
+    .step h3 {
+      margin: 0 0 4px;
+      font-size: 26px;
+      line-height: 1.25;
+    }
+
+    .step p {
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1.35;
+    }
+
+    .command {
+      display: inline-block;
+      max-width: 100%;
+      margin-top: 8px;
+      padding: 10px 14px;
+      border: 1px solid rgba(117, 229, 255, 0.38);
+      background: rgba(2, 9, 17, 0.72);
+      color: var(--cyan);
+      font-size: 22px;
+      line-height: 1.35;
+      font-weight: 850;
+      word-break: break-all;
+      font-family: GuideSans, "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    }
+
+    .cmd-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .cmd-row {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      border: 1px solid rgba(117, 229, 255, 0.22);
+      background: rgba(5, 16, 28, 0.7);
+    }
+
+    .cmd-row b {
+      color: var(--amber);
+      font-size: 22px;
+    }
+
+    .cmd-row span {
+      color: #e8f2ff;
+      font-size: 22px;
+      line-height: 1.36;
+      font-weight: 700;
+    }
+
+    .example {
+      margin-top: 12px;
+      padding: 16px;
+      border-left: 5px solid var(--mint);
+      background: rgba(157, 248, 200, 0.1);
+      color: #effff7;
+      font-size: 22px;
+      line-height: 1.5;
+      font-weight: 620;
+    }
+
+    .warning {
+      border-left-color: var(--red);
+      background: rgba(255, 127, 145, 0.12);
+      color: #ffe8ec;
+    }
+
+    .tips {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .tip {
+      padding: 16px 18px;
+      border: 1px solid rgba(255, 210, 125, 0.28);
+      background: rgba(255, 210, 125, 0.08);
+      color: #ffe8b8;
+      font-size: 22px;
+      line-height: 1.42;
+      font-weight: 650;
+    }
+
+    .mini-title {
+      color: var(--muted);
+      font-size: 20px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .big-command {
+      display: block;
+      padding: 20px;
+      border: 1px solid rgba(117, 229, 255, 0.42);
+      background: rgba(2, 9, 17, 0.82);
+      color: var(--cyan);
+      font-size: 27px;
+      line-height: 1.42;
+      font-weight: 900;
+      word-break: break-all;
+    }
+
+    .footer-note {
+      margin-top: 42px;
+      padding: 24px;
+      border: 1px solid rgba(200, 183, 255, 0.28);
+      background: rgba(200, 183, 255, 0.09);
+      color: #e9e3ff;
+      font-size: 24px;
+      line-height: 1.44;
+      font-weight: 700;
+    }
+
+    .accent-cyan {
+      color: var(--cyan);
+    }
+
+    .accent-mint {
+      color: var(--mint);
+    }
+
+    .accent-amber {
+      color: var(--amber);
+    }
+
+    .accent-pink {
+      color: var(--pink);
+    }
+
+    .spacer {
+      height: 18px;
+    }
+  </style>
+</head>
+<body>
+  <article id="poster-complete" class="sheet long-sheet">
+    <div class="topline">
+      <div class="brand"><span class="seal">TW</span><span>学院都市群文游</span></div>
+      <div class="tag">玩家版 · 一看就会</div>
+    </div>
+
+    <h1>文字世界<br>开局说明书</h1>
+    <p class="subtitle">
+      这是一个<strong>每小时结算一次</strong>的群内文字世界。你在群里提交本轮行动，系统统一结算；公共结果发群里，个人遭遇和状态尽量私聊给你。
+    </p>
+
+    <div class="hero-grid">
+      <div class="notice">
+        <div class="label">先记住这一条</div>
+        <p>世界开启后，群内普通聊天不会触发回复。想玩就发指令，非指令内容会被静默忽略。</p>
+      </div>
+      <div class="mini-panel">
+        <div class="label">更新节奏</div>
+        <p>每人每小时<br><span class="accent-mint">1 次行动</span></p>
+      </div>
+    </div>
+
+    <section class="section">
+      <div class="section-title"><span class="num">01</span>第一次进群，按这个顺序来</div>
+      <div class="flow">
+        <div class="step">
+          <div class="step-index">1</div>
+          <div>
+            <h3>看格式</h3>
+            <p>先拿角色卡模板，照着填不会乱。</p>
+            <span class="command">角色卡模板</span>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-index">2</div>
+          <div>
+            <h3>创建角色</h3>
+            <p>标准格式或自然语言都可以，提交后等待管理员审核。</p>
+            <span class="command">创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级</span>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-index">3</div>
+          <div>
+            <h3>绑定私聊</h3>
+            <p>在私聊里绑定，个人结果和早八状态栏会更好送达。</p>
+            <span class="command">绑定文游私聊</span>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-index">4</div>
+          <div>
+            <h3>看地图，开始行动</h3>
+            <p>不要瞬移，尽量写清楚地点、目标、方式。</p>
+            <span class="command">地图</span>
+            <span class="command">行动 我从第七学区校门口前往主干道，查看公告栏附近有没有新的传闻。</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title"><span class="num">02</span>角色卡怎么写</div>
+      <div class="grid-2">
+        <div class="panel strong">
+          <h3>标准写法</h3>
+          <div class="big-command">创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级</div>
+          <div class="example">创建角色 星野遥 | 第七学区高中生，风纪委员见习 | 风纪委员 | 微弱电磁感应，可察觉近距离异常电流，连续使用会头痛 | Level 2</div>
+        </div>
+        <div class="panel strong">
+          <h3>自然语言写法</h3>
+          <div class="big-command">创建角色 我叫星野遥，是第七学区高中生兼风纪委员见习，属于风纪委员阵营，能力是微弱电磁感应，能力等级是 Level 2。</div>
+          <div class="example warning">别写全知全能、绝对能力者、无限货币、随便秒杀、无代价复活之类内容，角色卡会被拦截或需要重改。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title"><span class="num">03</span>每小时行动怎么写</div>
+      <div class="grid-3">
+        <div class="panel">
+          <h3>地点</h3>
+          <p>写清楚你从哪里去哪里。系统会按地图路线判断，不能突然瞬移。</p>
+        </div>
+        <div class="panel">
+          <h3>目标</h3>
+          <p>写清楚你想调查、购买、休息、寻找谁，AI 才好给结果。</p>
+        </div>
+        <div class="panel">
+          <h3>互动</h3>
+          <p>你和其他玩家或 NPC 去到同一地点，就可能触发相遇和剧情。</p>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>行动示例</h3>
+          <div class="example">行动 我去便利店购买饮用水和便当，然后返回宿舍休息。</div>
+          <div class="example">行动 我留在当前位置，和附近的 NPC 打听最近的异常事件。</div>
+        </div>
+        <div class="panel">
+          <h3>更好的行动</h3>
+          <div class="example">行动 我尝试和星野遥同行，前往第七学区医院附近调查受伤学生的传闻。</div>
+          <div class="example warning">不建议：行动 我去全地图所有地方调查一遍并获得全部真相。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title"><span class="num">04</span>常用指令速查</div>
+      <div class="cmd-list">
+        <div class="cmd-row"><b>帮助</b><span>世界帮助 / 文游帮助 / 世界菜单</span></div>
+        <div class="cmd-row"><b>模板</b><span>角色卡模板 / 角色模板 / 创建格式</span></div>
+        <div class="cmd-row"><b>创建</b><span>创建角色 / 角色创建 / 创建人物</span></div>
+        <div class="cmd-row"><b>行动</b><span>行动 / 文游行动 / 提交行动</span></div>
+        <div class="cmd-row"><b>状态</b><span>状态 / 我的状态 / 状态栏</span></div>
+        <div class="cmd-row"><b>地图</b><span>地图 / 世界地图</span></div>
+        <div class="cmd-row"><b>本轮</b><span>待结算 / 本轮行动 / 行动列表</span></div>
+        <div class="cmd-row"><b>签到</b><span>签到 / 每日签到</span></div>
+        <div class="cmd-row"><b>私聊</b><span>绑定文游私聊 / 绑定世界私聊 / 文游私聊绑定</span></div>
+      </div>
+    </section>
+
+    <div class="footer-note">
+      最短开玩路线：<span class="accent-cyan">角色卡模板</span> → <span class="accent-cyan">创建角色</span> → 私聊 <span class="accent-cyan">绑定文游私聊</span> → <span class="accent-cyan">地图</span> → <span class="accent-cyan">行动</span>。
+    </div>
+  </article>
+
+  <article id="card-start" class="sheet card-sheet">
+    <div class="topline">
+      <div class="brand"><span class="seal">01</span><span>玩家开局</span></div>
+      <div class="tag">先照着做</div>
+    </div>
+    <h1>第一次进群<br>四步开玩</h1>
+    <p class="subtitle">世界开启后，普通聊天不会触发回复。请直接发下面这些指令。</p>
+    <section class="section">
+      <div class="flow">
+        <div class="step"><div class="step-index">1</div><div><h3>拿模板</h3><p>先看角色卡格式。</p><span class="command">角色卡模板</span></div></div>
+        <div class="step"><div class="step-index">2</div><div><h3>创建角色</h3><p>标准格式或自然语言都可以。</p><span class="command">创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级</span></div></div>
+        <div class="step"><div class="step-index">3</div><div><h3>绑定私聊</h3><p>私聊 bot 发送，方便收个人结果。</p><span class="command">绑定文游私聊</span></div></div>
+        <div class="step"><div class="step-index">4</div><div><h3>看地图并行动</h3><p>每小时只能提交一次行动。</p><span class="command">地图</span><span class="command">行动 我从第七学区校门口前往主干道，查看公告栏附近有没有新的传闻。</span></div></div>
+      </div>
+    </section>
+    <div class="footer-note">记住：公共事件看群里，个人遭遇看私聊。角色卡需要管理员审核后才能正常参与。</div>
+  </article>
+
+  <article id="card-character" class="sheet card-sheet">
+    <div class="topline">
+      <div class="brand"><span class="seal">02</span><span>角色卡</span></div>
+      <div class="tag">审核前必看</div>
+    </div>
+    <h1>角色卡<br>这样写最稳</h1>
+    <p class="subtitle">名字、身份、阵营、能力、等级都写清楚。能力要有边界，别写无敌。</p>
+    <section class="section">
+      <div class="panel strong">
+        <h3>标准格式</h3>
+        <div class="big-command">创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级</div>
+      </div>
+      <div class="panel strong" style="margin-top: 22px;">
+        <h3>可直接复制改名</h3>
+        <div class="example">创建角色 星野遥 | 第七学区高中生，风纪委员见习 | 风纪委员 | 微弱电磁感应，可察觉近距离异常电流，连续使用会头痛 | Level 2</div>
+      </div>
+      <div class="panel strong" style="margin-top: 22px;">
+        <h3>自然语言也可以</h3>
+        <div class="example">创建角色 我叫星野遥，是第七学区高中生兼风纪委员见习，属于风纪委员阵营，能力是微弱电磁感应，能力等级是 Level 2。</div>
+      </div>
+      <div class="tips">
+        <div class="tip">可以写：弱点、代价、擅长场景、日常身份。</div>
+        <div class="tip">不要写：全知全能、无限货币、随便秒杀、绝对能力者、无代价复活。</div>
+      </div>
+    </section>
+  </article>
+
+  <article id="card-action" class="sheet card-sheet">
+    <div class="topline">
+      <div class="brand"><span class="seal">03</span><span>每小时行动</span></div>
+      <div class="tag">本轮只交一次</div>
+    </div>
+    <h1>行动写得清楚<br>剧情才好看</h1>
+    <p class="subtitle">地点、目标、方式写出来。玩家和 NPC 在同一地点，可能会相遇。</p>
+    <section class="section">
+      <div class="grid-3">
+        <div class="panel"><h3>地点</h3><p>从哪里出发，想去哪里。</p></div>
+        <div class="panel"><h3>目标</h3><p>调查、购买、休息、寻找谁。</p></div>
+        <div class="panel"><h3>方式</h3><p>独自行动、同行、询问、观察。</p></div>
+      </div>
+      <div class="panel strong" style="margin-top: 26px;">
+        <h3>推荐格式</h3>
+        <div class="big-command">行动 我从当前位置前往目标地点，打算做什么，优先注意什么。</div>
+      </div>
+      <div class="panel" style="margin-top: 26px;">
+        <h3>好例子</h3>
+        <div class="example">行动 我去便利店购买饮用水和便当，然后返回宿舍休息。</div>
+        <div class="example">行动 我尝试和星野遥同行，前往第七学区医院附近调查受伤学生的传闻。</div>
+        <div class="example warning">不建议：行动 我瞬移到所有地方，立刻知道全部真相。</div>
+      </div>
+    </section>
+  </article>
+
+  <article id="card-commands" class="sheet card-sheet">
+    <div class="topline">
+      <div class="brand"><span class="seal">04</span><span>指令速查</span></div>
+      <div class="tag">玩家常用</div>
+    </div>
+    <h1>想做什么<br>就发什么</h1>
+    <p class="subtitle">下面都是玩家会用到的指令。斜杠不用打，直接发中文。</p>
+    <section class="section">
+      <div class="cmd-list">
+        <div class="cmd-row"><b>帮助</b><span>世界帮助 / 文游帮助 / 世界菜单</span></div>
+        <div class="cmd-row"><b>模板</b><span>角色卡模板 / 角色模板 / 创建格式</span></div>
+        <div class="cmd-row"><b>创建</b><span>创建角色 / 角色创建 / 创建人物</span></div>
+        <div class="cmd-row"><b>行动</b><span>行动 / 文游行动 / 提交行动</span></div>
+        <div class="cmd-row"><b>状态</b><span>状态 / 我的状态 / 状态栏</span></div>
+        <div class="cmd-row"><b>地图</b><span>地图 / 世界地图</span></div>
+        <div class="cmd-row"><b>本轮</b><span>待结算 / 本轮行动 / 行动列表</span></div>
+        <div class="cmd-row"><b>签到</b><span>签到 / 每日签到</span></div>
+        <div class="cmd-row"><b>私聊</b><span>绑定文游私聊 / 绑定世界私聊 / 文游私聊绑定</span></div>
+      </div>
+    </section>
+    <div class="footer-note">最短流程：角色卡模板 → 创建角色 → 私聊绑定文游私聊 → 地图 → 行动。</div>
+  </article>
+</body>
+</html>
