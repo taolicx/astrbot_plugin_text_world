@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>学园都市美术详细标注版地图</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 44px;
+      font-family: "Microsoft YaHei", "Noto Sans CJK SC", "PingFang SC", Arial, sans-serif;
+      color: #203036;
+      background:
+        radial-gradient(circle at 18% 10%, rgba(91, 135, 150, .22), transparent 32%),
+        linear-gradient(135deg, #eef3ea, #f8efe2);
+    }
+    .sheet {
+      width: 1880px;
+      min-height: 2460px;
+      margin: 0 auto 56px;
+      padding: 52px;
+      border-radius: 34px;
+      background: rgba(255, 252, 246, .95);
+      box-shadow: 0 28px 86px rgba(24, 38, 45, .22);
+      border: 1px solid rgba(80, 92, 96, .15);
+    }
+    .header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 30px;
+      align-items: end;
+      margin-bottom: 30px;
+      padding-bottom: 24px;
+      border-bottom: 2px solid rgba(70, 83, 86, .17);
+    }
+    h1 {
+      margin: 0;
+      font-size: 58px;
+      line-height: 1.08;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+    .subtitle {
+      max-width: 1260px;
+      margin: 14px 0 0;
+      color: #657276;
+      font-size: 23px;
+      line-height: 1.55;
+    }
+    .badge {
+      min-width: 270px;
+      padding: 18px 24px;
+      border-radius: 18px;
+      border: 3px solid rgba(181, 77, 64, .76);
+      color: #a4473e;
+      text-align: center;
+      font-size: 27px;
+      font-weight: 900;
+      transform: rotate(1.6deg);
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1180px 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+    .art-frame {
+      position: relative;
+      width: 1180px;
+      height: 1770px;
+      border-radius: 28px;
+      overflow: hidden;
+      background: #dfe8e2;
+      border: 1px solid rgba(73, 82, 81, .24);
+      box-shadow: inset 0 0 0 8px rgba(255, 255, 255, .34);
+    }
+    .art-frame img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(1.03) contrast(1.02) brightness(.98);
+    }
+    .art-frame::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.05), rgba(20,35,42,.10)),
+        radial-gradient(circle at 50% 50%, transparent 48%, rgba(255, 249, 235, .16));
+      pointer-events: none;
+    }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+    }
+    .pin .halo { opacity: .22; }
+    .pin .dot {
+      stroke: rgba(255, 255, 255, .95);
+      stroke-width: 5;
+      filter: drop-shadow(0 10px 12px rgba(14, 26, 32, .36));
+    }
+    .pin text {
+      fill: #fff;
+      text-anchor: middle;
+      font-size: 23px;
+      font-weight: 900;
+      paint-order: stroke;
+      stroke: rgba(0,0,0,.18);
+      stroke-width: 2px;
+      letter-spacing: 0;
+    }
+    .pin.central text { font-size: 27px; }
+    .route {
+      stroke: rgba(34, 53, 58, .55);
+      stroke-width: 7;
+      stroke-linecap: round;
+      filter: drop-shadow(0 2px 2px rgba(255,255,255,.65));
+    }
+    .core-route {
+      stroke: rgba(190, 76, 62, .76);
+      stroke-width: 10;
+    }
+    .dash-route {
+      stroke-dasharray: 16 13;
+      opacity: .68;
+    }
+    .callout path {
+      fill: none;
+      stroke-width: 3;
+      opacity: .78;
+      stroke-linecap: round;
+      stroke-dasharray: 5 5;
+      paint-order: stroke;
+    }
+    .callout rect {
+      fill: rgba(255, 253, 247, .88);
+      stroke: rgba(40, 51, 54, .18);
+      stroke-width: 1.4;
+      filter: drop-shadow(0 8px 12px rgba(19, 32, 38, .18));
+    }
+    .callout text {
+      fill: #1f3036;
+      letter-spacing: 0;
+      paint-order: stroke;
+      stroke: rgba(255,255,255,.7);
+      stroke-width: 2px;
+    }
+    .callout-title {
+      font-size: 15px;
+      font-weight: 900;
+    }
+    .callout-role {
+      font-size: 13px;
+      font-weight: 800;
+      fill: #4d5f64;
+    }
+    .callout-detail {
+      font-size: 11px;
+      font-weight: 700;
+      fill: #6a7476;
+    }
+    .callout.compact .callout-title { font-size: 15px; }
+    .callout.compact .callout-role { font-size: 13px; }
+    .callout.compact .callout-detail { font-size: 11px; }
+    .side {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .side.single {
+      grid-template-columns: 1fr;
+    }
+    .side-row {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 12px;
+      min-height: 86px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .76);
+      border: 1px solid rgba(79, 88, 88, .14);
+    }
+    .side-row span {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--c);
+      font-size: 18px;
+      font-weight: 900;
+      box-shadow: 0 9px 18px rgba(23, 38, 46, .18);
+    }
+    .side-row b {
+      display: block;
+      font-size: 18px;
+      line-height: 1.1;
+    }
+    .side-row em {
+      display: block;
+      margin-top: 4px;
+      color: #617176;
+      font-style: normal;
+      font-weight: 800;
+      font-size: 14px;
+    }
+    .side-row p {
+      margin: 5px 0 0;
+      color: #758083;
+      font-size: 12px;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-top: 30px;
+    }
+    .note {
+      padding: 20px 22px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .72);
+      border-left: 7px solid #b84f43;
+      font-size: 18px;
+      line-height: 1.45;
+      color: #607074;
+    }
+    .note b {
+      display: block;
+      margin-bottom: 8px;
+      color: #213137;
+      font-size: 24px;
+    }
+    .footer {
+      margin-top: 28px;
+      padding-top: 18px;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      border-top: 1px solid rgba(76, 84, 84, .18);
+      color: #68777a;
+      font-size: 17px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <section class="sheet" id="annotated-overview">
+    <div class="header">
+      <div>
+        <h1>学园都市地图｜美术详细标注版</h1>
+        <p class="subtitle">在美术详细版底图上直接标出二十三学区名称、职能和关键用途。此图用于展示和玩家认路；精确移动路线仍可参考清晰路线图。</p>
+      </div>
+      <div class="badge">详细标注版</div>
+    </div>
+    <div class="layout">
+      <div class="art-frame">
+        <img src="assets/academy_city_background_art.png" alt="" />
+        <svg class="overlay" viewBox="0 0 1024 1536" aria-label="学园都市美术详细标注总览地图">
+          
+      <g class="callout ">
+        <path d="M 505 462 L 548 423" stroke="#6b5e9f"></path>
+        <rect x="548" y="392" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="560" y="415">01 第一学区</text>
+        <text class="callout-role" x="560" y="435">司法行政区</text>
+        <text class="callout-detail" x="560" y="449">政府街 / 审查严格</text>
+      </g>
+      <g class="callout ">
+        <path d="M 670 572 L 706 541" stroke="#405d87"></path>
+        <rect x="706" y="510" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="718" y="533">02 第二学区</text>
+        <text class="callout-role" x="718" y="553">警备训练区</text>
+        <text class="callout-detail" x="718" y="567">警备员训练 / 武器开发</text>
+      </g>
+      <g class="callout ">
+        <path d="M 215 225 L 240 201" stroke="#24747d"></path>
+        <rect x="66" y="170" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="78" y="193">03 第三学区</text>
+        <text class="callout-role" x="78" y="213">外交展示区</text>
+        <text class="callout-detail" x="78" y="227">访客窗口 / 展示设施</text>
+      </g>
+      <g class="callout ">
+        <path d="M 604 1152 L 654 1229" stroke="#9a7726"></path>
+        <rect x="654" y="1198" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="666" y="1221">04 第四学区</text>
+        <text class="callout-role" x="666" y="1241">餐饮与农业大楼</text>
+        <text class="callout-detail" x="666" y="1255">食品补给 / 农业大楼</text>
+      </g>
+      <g class="callout ">
+        <path d="M 376 782 L 392 761" stroke="#2f7661"></path>
+        <rect x="218" y="730" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="230" y="753">05 第五学区</text>
+        <text class="callout-role" x="230" y="773">大学区</text>
+        <text class="callout-detail" x="230" y="787">大学 / 学术委托</text>
+      </g>
+      <g class="callout ">
+        <path d="M 260 1128 L 276 1113" stroke="#a17925"></path>
+        <rect x="102" y="1082" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="114" y="1105">06 第六学区</text>
+        <text class="callout-role" x="114" y="1125">娱乐休闲区</text>
+        <text class="callout-detail" x="114" y="1139">娱乐设施 / 活动传闻</text>
+      </g>
+      <g class="callout ">
+        <path d="M 528 700 L 560 666" stroke="#bd4a3f"></path>
+        <rect x="560" y="635" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="572" y="658">07 第七学区</text>
+        <text class="callout-role" x="572" y="678">中心学区</text>
+        <text class="callout-detail" x="572" y="692">主舞台 / 学校医院</text>
+      </g>
+      <g class="callout ">
+        <path d="M 430 906 L 484 967" stroke="#2f7661"></path>
+        <rect x="484" y="936" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="496" y="959">08 第八学区</text>
+        <text class="callout-role" x="496" y="979">教师住宿区</text>
+        <text class="callout-detail" x="496" y="993">教师住宅 / 教育设施</text>
+      </g>
+      <g class="callout ">
+        <path d="M 255 880 L 238 909" stroke="#8a5b86"></path>
+        <rect x="64" y="878" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="76" y="901">09 第九学区</text>
+        <text class="callout-role" x="76" y="921">工艺美术区</text>
+        <text class="callout-detail" x="76" y="935">制作道具 / 艺术设施</text>
+      </g>
+      <g class="callout ">
+        <path d="M 150 1270 L 226 1243" stroke="#725444"></path>
+        <rect x="52" y="1212" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="64" y="1235">10 第十学区</text>
+        <text class="callout-role" x="64" y="1255">墓地与少年院</text>
+        <text class="callout-detail" x="64" y="1269">高风险 / 都市阴影</text>
+      </g>
+      <g class="callout ">
+        <path d="M 192 1380 L 236 1453" stroke="#24747d"></path>
+        <rect x="236" y="1422" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="248" y="1445">11 第十一学区</text>
+        <text class="callout-role" x="248" y="1465">陆路物流口</text>
+        <text class="callout-detail" x="248" y="1479">外墙大门 / 物流车队</text>
+      </g>
+      <g class="callout ">
+        <path d="M 392 1110 L 484 1195" stroke="#6d6092"></path>
+        <rect x="310" y="1164" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="322" y="1187">12 第十二学区</text>
+        <text class="callout-role" x="322" y="1207">宗教与神学研究区</text>
+        <text class="callout-detail" x="322" y="1221">异国氛围 / 神学研究</text>
+      </g>
+      <g class="callout ">
+        <path d="M 304 638 L 268 681" stroke="#2f7661"></path>
+        <rect x="94" y="650" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="106" y="673">13 第十三学区</text>
+        <text class="callout-role" x="106" y="693">幼小教育区</text>
+        <text class="callout-detail" x="106" y="707">小学幼儿园 / 治安较好</text>
+      </g>
+      <g class="callout ">
+        <path d="M 165 520 L 216 571" stroke="#24747d"></path>
+        <rect x="42" y="540" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="54" y="563">14 第十四学区</text>
+        <text class="callout-role" x="54" y="583">留学生区</text>
+        <text class="callout-detail" x="54" y="597">多语告示 / 外部文化</text>
+      </g>
+      <g class="callout ">
+        <path d="M 300 255 L 434 209" stroke="#ab6128"></path>
+        <rect x="260" y="178" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="272" y="201">15 第十五学区</text>
+        <text class="callout-role" x="272" y="221">商业与媒体中心</text>
+        <text class="callout-detail" x="272" y="235">商业街 / 电视台</text>
+      </g>
+      <g class="callout ">
+        <path d="M 610 915 L 654 916" stroke="#9a7726"></path>
+        <rect x="654" y="885" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="666" y="908">16 第十六学区</text>
+        <text class="callout-role" x="666" y="928">学生打工区</text>
+        <text class="callout-detail" x="666" y="942">兼职 / 跑腿委托</text>
+      </g>
+      <g class="callout ">
+        <path d="M 835 382 L 1000 345" stroke="#676f7a"></path>
+        <rect x="826" y="314" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="838" y="337">17 第十七学区</text>
+        <text class="callout-role" x="838" y="357">工业制造区</text>
+        <text class="callout-detail" x="838" y="371">工厂 / 高等级监狱传闻</text>
+      </g>
+      <g class="callout ">
+        <path d="M 686 716 L 732 783" stroke="#2f7661"></path>
+        <rect x="732" y="752" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="744" y="775">18 第十八学区</text>
+        <text class="callout-role" x="744" y="795">能力开发名校区</text>
+        <text class="callout-detail" x="744" y="809">名校 / 研究机构</text>
+      </g>
+      <g class="callout ">
+        <path d="M 785 648 L 828 709" stroke="#725444"></path>
+        <rect x="828" y="678" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="840" y="701">19 第十九学区</text>
+        <text class="callout-role" x="840" y="721">再开发失败区</text>
+        <text class="callout-detail" x="840" y="735">废弃建筑 / 可疑交易</text>
+      </g>
+      <g class="callout ">
+        <path d="M 402 435 L 420 413" stroke="#3d7774"></path>
+        <rect x="246" y="382" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="258" y="405">20 第二十学区</text>
+        <text class="callout-role" x="258" y="425">运动工学区</text>
+        <text class="callout-detail" x="258" y="439">运动工学 / 训练</text>
+      </g>
+      <g class="callout ">
+        <path d="M 704 188 L 736 159" stroke="#4f7d42"></path>
+        <rect x="736" y="128" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="748" y="151">21 第二十一学区</text>
+        <text class="callout-role" x="748" y="171">水源与山岳区</text>
+        <text class="callout-detail" x="748" y="185">水库 / 山岳 / 天文台</text>
+      </g>
+      <g class="callout ">
+        <path d="M 894 525 L 1024 607" stroke="#5c6475"></path>
+        <rect x="850" y="576" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="862" y="599">22 第二十二学区</text>
+        <text class="callout-role" x="862" y="619">地下街区</text>
+        <text class="callout-detail" x="862" y="633">地下街 / 垂直风力</text>
+      </g>
+      <g class="callout ">
+        <path d="M 815 1032 L 842 1119" stroke="#24747d"></path>
+        <rect x="842" y="1088" width="174" height="62" rx="12"></rect>
+        <text class="callout-title" x="854" y="1111">23 第二十三学区</text>
+        <text class="callout-role" x="854" y="1131">航空宇宙区</text>
+        <text class="callout-detail" x="854" y="1145">机场 / 航空宇宙</text>
+      </g>
+          
+      <g class="pin " transform="translate(505 462)">
+        <circle class="halo" r="36" fill="#6b5e9f"></circle>
+        <circle class="dot" r="24" fill="#6b5e9f"></circle>
+        <text y="8">01</text>
+      </g>
+      <g class="pin " transform="translate(670 572)">
+        <circle class="halo" r="36" fill="#405d87"></circle>
+        <circle class="dot" r="24" fill="#405d87"></circle>
+        <text y="8">02</text>
+      </g>
+      <g class="pin " transform="translate(215 225)">
+        <circle class="halo" r="36" fill="#24747d"></circle>
+        <circle class="dot" r="24" fill="#24747d"></circle>
+        <text y="8">03</text>
+      </g>
+      <g class="pin " transform="translate(604 1152)">
+        <circle class="halo" r="36" fill="#9a7726"></circle>
+        <circle class="dot" r="24" fill="#9a7726"></circle>
+        <text y="8">04</text>
+      </g>
+      <g class="pin " transform="translate(376 782)">
+        <circle class="halo" r="36" fill="#2f7661"></circle>
+        <circle class="dot" r="24" fill="#2f7661"></circle>
+        <text y="8">05</text>
+      </g>
+      <g class="pin " transform="translate(260 1128)">
+        <circle class="halo" r="36" fill="#a17925"></circle>
+        <circle class="dot" r="24" fill="#a17925"></circle>
+        <text y="8">06</text>
+      </g>
+      <g class="pin central" transform="translate(528 700)">
+        <circle class="halo" r="43" fill="#bd4a3f"></circle>
+        <circle class="dot" r="31" fill="#bd4a3f"></circle>
+        <text y="8">07</text>
+      </g>
+      <g class="pin " transform="translate(430 906)">
+        <circle class="halo" r="36" fill="#2f7661"></circle>
+        <circle class="dot" r="24" fill="#2f7661"></circle>
+        <text y="8">08</text>
+      </g>
+      <g class="pin " transform="translate(255 880)">
+        <circle class="halo" r="36" fill="#8a5b86"></circle>
+        <circle class="dot" r="24" fill="#8a5b86"></circle>
+        <text y="8">09</text>
+      </g>
+      <g class="pin " transform="translate(150 1270)">
+        <circle class="halo" r="36" fill="#725444"></circle>
+        <circle class="dot" r="24" fill="#725444"></circle>
+        <text y="8">10</text>
+      </g>
+      <g class="pin " transform="translate(192 1380)">
+        <circle class="halo" r="36" fill="#24747d"></circle>
+        <circle class="dot" r="24" fill="#24747d"></circle>
+        <text y="8">11</text>
+      </g>
+      <g class="pin " transform="translate(392 1110)">
+        <circle class="halo" r="36" fill="#6d6092"></circle>
+        <circle class="dot" r="24" fill="#6d6092"></circle>
+        <text y="8">12</text>
+      </g>
+      <g class="pin " transform="translate(304 638)">
+        <circle class="halo" r="36" fill="#2f7661"></circle>
+        <circle class="dot" r="24" fill="#2f7661"></circle>
+        <text y="8">13</text>
+      </g>
+      <g class="pin " transform="translate(165 520)">
+        <circle class="halo" r="36" fill="#24747d"></circle>
+        <circle class="dot" r="24" fill="#24747d"></circle>
+        <text y="8">14</text>
+      </g>
+      <g class="pin " transform="translate(300 255)">
+        <circle class="halo" r="36" fill="#ab6128"></circle>
+        <circle class="dot" r="24" fill="#ab6128"></circle>
+        <text y="8">15</text>
+      </g>
+      <g class="pin " transform="translate(610 915)">
+        <circle class="halo" r="36" fill="#9a7726"></circle>
+        <circle class="dot" r="24" fill="#9a7726"></circle>
+        <text y="8">16</text>
+      </g>
+      <g class="pin " transform="translate(835 382)">
+        <circle class="halo" r="36" fill="#676f7a"></circle>
+        <circle class="dot" r="24" fill="#676f7a"></circle>
+        <text y="8">17</text>
+      </g>
+      <g class="pin " transform="translate(686 716)">
+        <circle class="halo" r="36" fill="#2f7661"></circle>
+        <circle class="dot" r="24" fill="#2f7661"></circle>
+        <text y="8">18</text>
+      </g>
+      <g class="pin " transform="translate(785 648)">
+        <circle class="halo" r="36" fill="#725444"></circle>
+        <circle class="dot" r="24" fill="#725444"></circle>
+        <text y="8">19</text>
+      </g>
+      <g class="pin " transform="translate(402 435)">
+        <circle class="halo" r="36" fill="#3d7774"></circle>
+        <circle class="dot" r="24" fill="#3d7774"></circle>
+        <text y="8">20</text>
+      </g>
+      <g class="pin " transform="translate(704 188)">
+        <circle class="halo" r="36" fill="#4f7d42"></circle>
+        <circle class="dot" r="24" fill="#4f7d42"></circle>
+        <text y="8">21</text>
+      </g>
+      <g class="pin " transform="translate(894 525)">
+        <circle class="halo" r="36" fill="#5c6475"></circle>
+        <circle class="dot" r="24" fill="#5c6475"></circle>
+        <text y="8">22</text>
+      </g>
+      <g class="pin " transform="translate(815 1032)">
+        <circle class="halo" r="36" fill="#24747d"></circle>
+        <circle class="dot" r="24" fill="#24747d"></circle>
+        <text y="8">23</text>
+      </g>
+        </svg>
+      </div>
+      <div class="side">
+    <article class="side-row">
+      <span style="--c:#6b5e9f">01</span>
+      <div>
+        <b>第一学区</b>
+        <em>司法行政区</em>
+        <p>政府街 / 审查严格</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#405d87">02</span>
+      <div>
+        <b>第二学区</b>
+        <em>警备训练区</em>
+        <p>警备员训练 / 武器开发</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#24747d">03</span>
+      <div>
+        <b>第三学区</b>
+        <em>外交展示区</em>
+        <p>访客窗口 / 展示设施</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#9a7726">04</span>
+      <div>
+        <b>第四学区</b>
+        <em>餐饮与农业大楼</em>
+        <p>食品补给 / 农业大楼</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#2f7661">05</span>
+      <div>
+        <b>第五学区</b>
+        <em>大学区</em>
+        <p>大学 / 学术委托</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#a17925">06</span>
+      <div>
+        <b>第六学区</b>
+        <em>娱乐休闲区</em>
+        <p>娱乐设施 / 活动传闻</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#bd4a3f">07</span>
+      <div>
+        <b>第七学区</b>
+        <em>中心学区</em>
+        <p>主舞台 / 学校医院</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#2f7661">08</span>
+      <div>
+        <b>第八学区</b>
+        <em>教师住宿区</em>
+        <p>教师住宅 / 教育设施</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#8a5b86">09</span>
+      <div>
+        <b>第九学区</b>
+        <em>工艺美术区</em>
+        <p>制作道具 / 艺术设施</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#725444">10</span>
+      <div>
+        <b>第十学区</b>
+        <em>墓地与少年院</em>
+        <p>高风险 / 都市阴影</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#24747d">11</span>
+      <div>
+        <b>第十一学区</b>
+        <em>陆路物流口</em>
+        <p>外墙大门 / 物流车队</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#6d6092">12</span>
+      <div>
+        <b>第十二学区</b>
+        <em>宗教与神学研究区</em>
+        <p>异国氛围 / 神学研究</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#2f7661">13</span>
+      <div>
+        <b>第十三学区</b>
+        <em>幼小教育区</em>
+        <p>小学幼儿园 / 治安较好</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#24747d">14</span>
+      <div>
+        <b>第十四学区</b>
+        <em>留学生区</em>
+        <p>多语告示 / 外部文化</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#ab6128">15</span>
+      <div>
+        <b>第十五学区</b>
+        <em>商业与媒体中心</em>
+        <p>商业街 / 电视台</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#9a7726">16</span>
+      <div>
+        <b>第十六学区</b>
+        <em>学生打工区</em>
+        <p>兼职 / 跑腿委托</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#676f7a">17</span>
+      <div>
+        <b>第十七学区</b>
+        <em>工业制造区</em>
+        <p>工厂 / 高等级监狱传闻</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#2f7661">18</span>
+      <div>
+        <b>第十八学区</b>
+        <em>能力开发名校区</em>
+        <p>名校 / 研究机构</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#725444">19</span>
+      <div>
+        <b>第十九学区</b>
+        <em>再开发失败区</em>
+        <p>废弃建筑 / 可疑交易</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#3d7774">20</span>
+      <div>
+        <b>第二十学区</b>
+        <em>运动工学区</em>
+        <p>运动工学 / 训练</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#4f7d42">21</span>
+      <div>
+        <b>第二十一学区</b>
+        <em>水源与山岳区</em>
+        <p>水库 / 山岳 / 天文台</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#5c6475">22</span>
+      <div>
+        <b>第二十二学区</b>
+        <em>地下街区</em>
+        <p>地下街 / 垂直风力</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#24747d">23</span>
+      <div>
+        <b>第二十三学区</b>
+        <em>航空宇宙区</em>
+        <p>机场 / 航空宇宙</p>
+      </div>
+    </article></div>
+    </div>
+    <div class="notes">
+      <div class="note"><b>标注内容</b>每个学区都标出编号、名称、职能和常见玩法用途。</div>
+      <div class="note"><b>路线判定</b>此图主打展示，精确相邻路线请看“学园都市地图_路线图.png”。</div>
+      <div class="note"><b>用途建议</b>适合发给玩家当世界总览，也适合放进 WebUI 地图页。</div>
+    </div>
+    <div class="footer">
+      <span>AI 底图生成，全部中文标注由程序叠加。</span>
+      <span>文件：学园都市地图_美术详细标注版_总览.png</span>
+    </div>
+  </section>
+
+  <section class="sheet" id="annotated-inner">
+    <div class="header">
+      <div>
+        <h1>第七学区地图｜美术详细标注版</h1>
+        <p class="subtitle">直接标注默认主舞台内的校门、主干道、高中、图书馆、实验楼、宿舍、食堂、商业街、广场、医院，以及外部学区入口。</p>
+      </div>
+      <div class="badge">主舞台标注</div>
+    </div>
+    <div class="layout">
+      <div class="art-frame">
+        <img src="assets/academy_city_district7_background_art.png" alt="" />
+        <svg class="overlay" viewBox="0 0 1024 1536" aria-label="第七学区美术详细标注地图">
+          <line class="route  " x1="220" y1="186" x2="506" y2="330"></line><line class="route  " x1="220" y1="186" x2="275" y2="525"></line><line class="route  " x1="220" y1="186" x2="258" y2="825"></line><line class="route core-route dash-route" x1="220" y1="186" x2="900" y2="1330"></line><line class="route core-route " x1="506" y1="330" x2="516" y2="1184"></line><line class="route  " x1="506" y1="330" x2="778" y2="170"></line><line class="route  dash-route" x1="506" y1="330" x2="890" y2="1010"></line><line class="route core-route dash-route" x1="506" y1="330" x2="900" y2="1330"></line><line class="route  " x1="275" y1="525" x2="500" y2="620"></line><line class="route  " x1="275" y1="525" x2="735" y2="545"></line><line class="route core-route " x1="275" y1="525" x2="516" y2="1184"></line><line class="route core-route " x1="500" y1="620" x2="516" y2="1184"></line><line class="route  dash-route" x1="500" y1="620" x2="918" y2="640"></line><line class="route  " x1="735" y1="545" x2="778" y2="170"></line><line class="route  dash-route" x1="735" y1="545" x2="916" y2="500"></line><line class="route  dash-route" x1="735" y1="545" x2="918" y2="640"></line><line class="route  " x1="258" y1="825" x2="510" y2="842"></line><line class="route core-route " x1="258" y1="825" x2="516" y2="1184"></line><line class="route  " x1="510" y1="842" x2="742" y2="1032"></line><line class="route  dash-route" x1="510" y1="842" x2="510" y2="1450"></line><line class="route core-route " x1="742" y1="1032" x2="516" y2="1184"></line><line class="route  dash-route" x1="742" y1="1032" x2="890" y2="1010"></line><line class="route  dash-route" x1="742" y1="1032" x2="510" y2="1450"></line><line class="route core-route dash-route" x1="516" y1="1184" x2="900" y2="1330"></line><line class="route core-route dash-route" x1="778" y1="170" x2="900" y2="1330"></line>
+          
+      <g class="callout compact">
+        <path d="M 220 186 L 267 267" stroke="#bd4a3f"></path>
+        <rect x="102" y="238" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="114" y="261">A 第七学区校门口</text>
+        <text class="callout-role" x="114" y="281">入口 / 公告栏</text>
+        <text class="callout-detail" x="114" y="295">集合、公告、校车站</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 506 330 L 534 287" stroke="#4f6378"></path>
+        <rect x="534" y="258" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="546" y="281">B 第七学区主干道</text>
+        <text class="callout-role" x="546" y="301">交通主轴</text>
+        <text class="callout-detail" x="546" y="315">去学校、医院、商业区</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 275 525 L 239 537" stroke="#2f7661"></path>
+        <rect x="74" y="508" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="86" y="531">C 第七学区某高中</text>
+        <text class="callout-role" x="86" y="551">学习 / 社团</text>
+        <text class="callout-detail" x="86" y="565">角色默认日常起点</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 500 620 L 513 689" stroke="#5d6593"></path>
+        <rect x="348" y="660" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="360" y="683">D 书库终端图书馆</text>
+        <text class="callout-role" x="360" y="703">情报 / 查询</text>
+        <text class="callout-detail" x="360" y="717">公开资料与传闻线索</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 735 545 L 748 503" stroke="#6f5c9d"></path>
+        <rect x="748" y="474" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="760" y="497">E 能力开发实验楼</text>
+        <text class="callout-role" x="760" y="517">能力测定</text>
+        <text class="callout-detail" x="760" y="531">AIM观测、实验事件</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 258 825 L 243 849" stroke="#9a7726"></path>
+        <rect x="78" y="820" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="90" y="843">F 第七学区学生宿舍</text>
+        <text class="callout-role" x="90" y="863">休息 / 生活</text>
+        <text class="callout-detail" x="90" y="877">串门、小交易、夜间传闻</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 510 842 L 541 901" stroke="#9a7726"></path>
+        <rect x="376" y="872" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="388" y="895">G 学生食堂</text>
+        <text class="callout-role" x="388" y="915">补给</text>
+        <text class="callout-detail" x="388" y="929">恢复水分与饱食度</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 742 1032 L 770 991" stroke="#ab6128"></path>
+        <rect x="770" y="962" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="782" y="985">H 第十五学区商业街</text>
+        <text class="callout-role" x="782" y="1005">商店 / 媒体</text>
+        <text class="callout-detail" x="782" y="1019">购物、打听消息</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 516 1184 L 495 1223" stroke="#bd4a3f"></path>
+        <rect x="330" y="1194" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="342" y="1217">I 第七学区中心广场</text>
+        <text class="callout-role" x="342" y="1237">公共事件</text>
+        <text class="callout-detail" x="342" y="1251">偶遇、公告、新闻传闻</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 778 170 L 893 261" stroke="#3d7f7b"></path>
+        <rect x="728" y="232" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="740" y="255">J 冥土追魂医院</text>
+        <text class="callout-role" x="740" y="275">医疗 / 恢复</text>
+        <text class="callout-detail" x="740" y="289">受伤治疗、异常医学事件</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 916 500 L 983 419" stroke="#405d87"></path>
+        <rect x="818" y="390" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="830" y="413">02 第二学区入口</text>
+        <text class="callout-role" x="830" y="433">外部接入</text>
+        <text class="callout-detail" x="830" y="447">警备训练区方向</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 510 1450 L 539 1399" stroke="#9a7726"></path>
+        <rect x="374" y="1370" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="386" y="1393">04 第四学区入口</text>
+        <text class="callout-role" x="386" y="1413">外部接入</text>
+        <text class="callout-detail" x="386" y="1427">餐饮补给方向</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 900 1330 L 935 1289" stroke="#bd4a3f"></path>
+        <rect x="770" y="1260" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="782" y="1283">07 第七学区外环</text>
+        <text class="callout-role" x="782" y="1303">外部接入</text>
+        <text class="callout-detail" x="782" y="1317">返回二十三学区总览</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 890 1010 L 949 1117" stroke="#ab6128"></path>
+        <rect x="784" y="1088" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="796" y="1111">15 第十五学区入口</text>
+        <text class="callout-role" x="796" y="1131">外部接入</text>
+        <text class="callout-detail" x="796" y="1145">商业媒体中心方向</text>
+      </g>
+      <g class="callout compact">
+        <path d="M 918 640 L 965 734" stroke="#2f7661"></path>
+        <rect x="800" y="705" width="165" height="58" rx="12"></rect>
+        <text class="callout-title" x="812" y="728">18 第十八学区入口</text>
+        <text class="callout-role" x="812" y="748">外部接入</text>
+        <text class="callout-detail" x="812" y="762">能力开发名校区方向</text>
+      </g>
+          
+      <g class="pin " transform="translate(220 186)">
+        <circle class="halo" r="36" fill="#bd4a3f"></circle>
+        <circle class="dot" r="24" fill="#bd4a3f"></circle>
+        <text y="9">A</text>
+      </g>
+      <g class="pin " transform="translate(506 330)">
+        <circle class="halo" r="36" fill="#4f6378"></circle>
+        <circle class="dot" r="24" fill="#4f6378"></circle>
+        <text y="9">B</text>
+      </g>
+      <g class="pin " transform="translate(275 525)">
+        <circle class="halo" r="36" fill="#2f7661"></circle>
+        <circle class="dot" r="24" fill="#2f7661"></circle>
+        <text y="9">C</text>
+      </g>
+      <g class="pin " transform="translate(500 620)">
+        <circle class="halo" r="36" fill="#5d6593"></circle>
+        <circle class="dot" r="24" fill="#5d6593"></circle>
+        <text y="9">D</text>
+      </g>
+      <g class="pin " transform="translate(735 545)">
+        <circle class="halo" r="36" fill="#6f5c9d"></circle>
+        <circle class="dot" r="24" fill="#6f5c9d"></circle>
+        <text y="9">E</text>
+      </g>
+      <g class="pin " transform="translate(258 825)">
+        <circle class="halo" r="36" fill="#9a7726"></circle>
+        <circle class="dot" r="24" fill="#9a7726"></circle>
+        <text y="9">F</text>
+      </g>
+      <g class="pin " transform="translate(510 842)">
+        <circle class="halo" r="36" fill="#9a7726"></circle>
+        <circle class="dot" r="24" fill="#9a7726"></circle>
+        <text y="9">G</text>
+      </g>
+      <g class="pin " transform="translate(742 1032)">
+        <circle class="halo" r="36" fill="#ab6128"></circle>
+        <circle class="dot" r="24" fill="#ab6128"></circle>
+        <text y="9">H</text>
+      </g>
+      <g class="pin central" transform="translate(516 1184)">
+        <circle class="halo" r="43" fill="#bd4a3f"></circle>
+        <circle class="dot" r="31" fill="#bd4a3f"></circle>
+        <text y="9">I</text>
+      </g>
+      <g class="pin " transform="translate(778 170)">
+        <circle class="halo" r="36" fill="#3d7f7b"></circle>
+        <circle class="dot" r="24" fill="#3d7f7b"></circle>
+        <text y="9">J</text>
+      </g>
+      <g class="pin " transform="translate(916 500)">
+        <circle class="halo" r="36" fill="#405d87"></circle>
+        <circle class="dot" r="24" fill="#405d87"></circle>
+        <text y="8">02</text>
+      </g>
+      <g class="pin " transform="translate(510 1450)">
+        <circle class="halo" r="36" fill="#9a7726"></circle>
+        <circle class="dot" r="24" fill="#9a7726"></circle>
+        <text y="8">04</text>
+      </g>
+      <g class="pin central" transform="translate(900 1330)">
+        <circle class="halo" r="43" fill="#bd4a3f"></circle>
+        <circle class="dot" r="31" fill="#bd4a3f"></circle>
+        <text y="8">07</text>
+      </g>
+      <g class="pin " transform="translate(890 1010)">
+        <circle class="halo" r="36" fill="#ab6128"></circle>
+        <circle class="dot" r="24" fill="#ab6128"></circle>
+        <text y="8">15</text>
+      </g>
+      <g class="pin " transform="translate(918 640)">
+        <circle class="halo" r="36" fill="#2f7661"></circle>
+        <circle class="dot" r="24" fill="#2f7661"></circle>
+        <text y="8">18</text>
+      </g>
+        </svg>
+      </div>
+      <div class="side single">
+    <article class="side-row">
+      <span style="--c:#bd4a3f">A</span>
+      <div>
+        <b>第七学区校门口</b>
+        <em>入口 / 公告栏</em>
+        <p>集合、公告、校车站</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#4f6378">B</span>
+      <div>
+        <b>第七学区主干道</b>
+        <em>交通主轴</em>
+        <p>去学校、医院、商业区</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#2f7661">C</span>
+      <div>
+        <b>第七学区某高中</b>
+        <em>学习 / 社团</em>
+        <p>角色默认日常起点</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#5d6593">D</span>
+      <div>
+        <b>书库终端图书馆</b>
+        <em>情报 / 查询</em>
+        <p>公开资料与传闻线索</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#6f5c9d">E</span>
+      <div>
+        <b>能力开发实验楼</b>
+        <em>能力测定</em>
+        <p>AIM观测、实验事件</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#9a7726">F</span>
+      <div>
+        <b>第七学区学生宿舍</b>
+        <em>休息 / 生活</em>
+        <p>串门、小交易、夜间传闻</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#9a7726">G</span>
+      <div>
+        <b>学生食堂</b>
+        <em>补给</em>
+        <p>恢复水分与饱食度</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#ab6128">H</span>
+      <div>
+        <b>第十五学区商业街</b>
+        <em>商店 / 媒体</em>
+        <p>购物、打听消息</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#bd4a3f">I</span>
+      <div>
+        <b>第七学区中心广场</b>
+        <em>公共事件</em>
+        <p>偶遇、公告、新闻传闻</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#3d7f7b">J</span>
+      <div>
+        <b>冥土追魂医院</b>
+        <em>医疗 / 恢复</em>
+        <p>受伤治疗、异常医学事件</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#405d87">02</span>
+      <div>
+        <b>第二学区入口</b>
+        <em>外部接入</em>
+        <p>警备训练区方向</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#9a7726">04</span>
+      <div>
+        <b>第四学区入口</b>
+        <em>外部接入</em>
+        <p>餐饮补给方向</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#bd4a3f">07</span>
+      <div>
+        <b>第七学区外环</b>
+        <em>外部接入</em>
+        <p>返回二十三学区总览</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#ab6128">15</span>
+      <div>
+        <b>第十五学区入口</b>
+        <em>外部接入</em>
+        <p>商业媒体中心方向</p>
+      </div>
+    </article>
+    <article class="side-row">
+      <span style="--c:#2f7661">18</span>
+      <div>
+        <b>第十八学区入口</b>
+        <em>外部接入</em>
+        <p>能力开发名校区方向</p>
+      </div>
+    </article></div>
+    </div>
+    <div class="notes">
+      <div class="note"><b>实线</b>表示第七学区内部移动路线，适合玩家提交小时行动。</div>
+      <div class="note"><b>虚线</b>表示外部接入口，连接第二、第四、第十五、第十八学区等方向。</div>
+      <div class="note"><b>剧情提示</b>图书馆查情报，实验楼做能力事件，医院处理受伤，广场触发公共事件。</div>
+    </div>
+    <div class="footer">
+      <span>第七学区标注版可直接发给玩家作为行动参考。</span>
+      <span>文件：学园都市地图_美术详细标注版_第七学区.png</span>
+    </div>
+  </section>
+</body>
+</html>
