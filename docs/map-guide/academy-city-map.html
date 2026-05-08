@@ -1,0 +1,1347 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>学园都市地图</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #263238;
+      --muted: #6c7472;
+      --paper: #fbf7ef;
+      --panel: #fffdf8;
+      --line: #c7bda8;
+      --route: #788a92;
+      --route-core: #b45a4f;
+      --blueprint: #2f5f73;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 42px;
+      font-family: "Microsoft YaHei", "Noto Sans CJK SC", "PingFang SC", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(120deg, rgba(85, 128, 140, 0.16), rgba(166, 128, 65, 0.12)),
+        repeating-linear-gradient(0deg, rgba(40, 76, 87, 0.035) 0, rgba(40, 76, 87, 0.035) 1px, transparent 1px, transparent 18px),
+        #eef1e7;
+    }
+
+    .sheet {
+      width: 1680px;
+      min-height: 2300px;
+      margin: 0 auto 54px;
+      padding: 58px;
+      border: 1px solid rgba(77, 82, 80, 0.16);
+      border-radius: 30px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 250, 241, 0.94)),
+        var(--paper);
+      box-shadow: 0 30px 90px rgba(29, 44, 52, 0.18);
+    }
+
+    .title-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 32px;
+      align-items: end;
+      padding-bottom: 28px;
+      border-bottom: 2px solid rgba(93, 101, 99, 0.22);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 62px;
+      line-height: 1.05;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 16px 0 0;
+      font-size: 24px;
+      line-height: 1.55;
+      color: var(--muted);
+      max-width: 1060px;
+    }
+
+    .stamp {
+      min-width: 230px;
+      padding: 18px 22px;
+      border: 3px solid rgba(178, 74, 61, 0.76);
+      color: #9c4038;
+      text-align: center;
+      font-weight: 900;
+      font-size: 28px;
+      transform: rotate(2deg);
+      border-radius: 16px;
+      background: rgba(255, 248, 240, 0.68);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1110px 1fr;
+      gap: 34px;
+      margin-top: 34px;
+      align-items: start;
+    }
+
+    .map-panel {
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 12% 14%, rgba(255, 255, 255, 0.82), transparent 24%),
+        #f8f1e4;
+      border: 1px solid rgba(110, 96, 76, 0.2);
+      padding: 16px;
+    }
+
+    .city-svg,
+    .inner-svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .terrain-line {
+      fill: none;
+      stroke: rgba(81, 123, 120, 0.34);
+      stroke-width: 16;
+      stroke-linecap: round;
+    }
+
+    .route {
+      stroke: var(--route);
+      stroke-width: 7;
+      stroke-linecap: round;
+      opacity: 0.72;
+    }
+
+    .route-core {
+      stroke: var(--route-core);
+      stroke-width: 9;
+      opacity: 0.86;
+    }
+
+    .district-node circle,
+    .inner-node circle {
+      filter: url(#nodeShadow);
+      stroke: rgba(255, 255, 255, 0.78);
+      stroke-width: 4;
+    }
+
+    .node-id,
+    .inner-id {
+      fill: #fff;
+      text-anchor: middle;
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .core-node .node-id {
+      font-size: 34px;
+    }
+
+    .route-code {
+      paint-order: stroke;
+      stroke: #fff8ed;
+      stroke-width: 8px;
+      fill: #53656e;
+      text-anchor: middle;
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    .legend-card {
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      gap: 14px;
+      align-items: start;
+      padding: 13px 14px;
+      border: 1px solid rgba(89, 93, 88, 0.14);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .legend-card.is-core {
+      border-color: rgba(178, 74, 61, 0.36);
+      background: rgba(255, 244, 237, 0.82);
+    }
+
+    .legend-card.compact {
+      grid-template-columns: 62px 1fr;
+      padding: 15px 16px;
+    }
+
+    .legend-num {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-size: 22px;
+      line-height: 1;
+      font-weight: 900;
+      box-shadow: 0 10px 20px rgba(34, 45, 53, 0.18);
+    }
+
+    .legend-num.letter {
+      font-size: 28px;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 span {
+      display: block;
+      margin-top: 4px;
+      color: #786f65;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .legend-card p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .note-band {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-top: 28px;
+    }
+
+    .note {
+      min-height: 118px;
+      padding: 20px;
+      border-left: 7px solid #b45a4f;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .note b {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 23px;
+    }
+
+    .note span {
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    .chips {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 48px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(88, 96, 96, 0.16);
+      font-size: 16px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .chip b {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .wide-layout {
+      margin-top: 34px;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 30px;
+      align-items: start;
+    }
+
+    .route-card {
+      padding: 26px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.64);
+      border: 1px solid rgba(84, 91, 88, 0.16);
+    }
+
+    .route-card h2 {
+      margin: 0 0 16px;
+      font-size: 34px;
+      letter-spacing: 0;
+    }
+
+    .route-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1.55;
+    }
+
+    .route-list {
+      margin-top: 18px;
+      color: #34454b;
+      font-size: 18px;
+      line-height: 1.8;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+      font-size: 17px;
+    }
+
+    th,
+    td {
+      padding: 12px 13px;
+      border-bottom: 1px solid rgba(100, 104, 96, 0.14);
+      vertical-align: top;
+      line-height: 1.45;
+    }
+
+    th {
+      width: 70px;
+      color: #a3473d;
+      font-size: 19px;
+      text-align: left;
+    }
+
+    tr:last-child th,
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .inner-layout {
+      display: grid;
+      grid-template-columns: 1120px 1fr;
+      gap: 32px;
+      margin-top: 34px;
+      align-items: start;
+    }
+
+    .inner-route {
+      stroke: #65777f;
+      stroke-width: 8;
+      stroke-linecap: round;
+      opacity: 0.72;
+    }
+
+    .portal-route {
+      stroke-dasharray: 15 14;
+      opacity: 0.54;
+    }
+
+    .main-road {
+      fill: none;
+      stroke: rgba(180, 90, 79, 0.34);
+      stroke-width: 42;
+      stroke-linecap: round;
+    }
+
+    .main-road.secondary {
+      stroke: rgba(69, 116, 119, 0.2);
+      stroke-width: 34;
+    }
+
+    .inner-short {
+      fill: #2e383b;
+      paint-order: stroke;
+      stroke: #fbf7ef;
+      stroke-width: 9px;
+      text-anchor: middle;
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .portal-node rect {
+      fill: rgba(255, 255, 255, 0.88);
+      stroke: rgba(90, 96, 94, 0.28);
+      stroke-width: 3;
+    }
+
+    .portal-node text {
+      fill: #52616a;
+      text-anchor: middle;
+      font-size: 25px;
+      font-weight: 900;
+    }
+
+    .footer {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(95, 100, 98, 0.18);
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    .small-table table {
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <section class="sheet" id="map-overview">
+    <div class="title-row">
+      <div>
+        <h1>学园都市二十三学区总览图</h1>
+        <p class="subtitle">供“群文游文字世界”玩家查看的世界地图。地图节点编号对应右侧学区说明，红色路线优先表示与第七学区相关的常用移动方向。</p>
+      </div>
+      <div class="stamp">玩家版地图</div>
+    </div>
+    <div class="layout">
+      <div class="map-panel">
+    <svg class="city-svg" viewBox="0 0 1110 1330" role="img" aria-label="学院都市二十三学区路线地图">
+      <defs>
+        <filter id="nodeShadow" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#1f2d3d" flood-opacity="0.22"/>
+        </filter>
+        <linearGradient id="mapWater" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="#dbece8"/>
+          <stop offset="1" stop-color="#edf2e2"/>
+        </linearGradient>
+      </defs>
+      <rect x="35" y="35" width="1040" height="1260" rx="42" fill="url(#mapWater)" opacity="0.72"></rect>
+      <path d="M60 380 C180 300 270 275 395 275 C585 275 730 330 860 450 C995 575 1035 775 930 980 C835 1168 650 1280 420 1270 C235 1263 105 1165 85 1008 C64 842 148 735 112 585 C92 500 15 460 60 380Z" fill="#fff8ec" opacity="0.78" stroke="#d4c6ac" stroke-width="3"></path>
+      <path d="M805 120 C925 190 1003 278 1050 398" class="terrain-line"></path>
+      <path d="M780 1165 C900 1088 970 990 1028 865" class="terrain-line"></path>
+      <path d="M130 1190 C220 1235 345 1260 463 1242" class="terrain-line"></path>
+      <line class="route" x1="420" y1="285" x2="560" y2="430" /><line class="route" x1="420" y1="285" x2="235" y2="395" /><line class="route route-core" x1="420" y1="285" x2="535" y2="640" /><line class="route" x1="420" y1="285" x2="315" y2="170" /><line class="route route-core" x1="560" y1="430" x2="535" y2="640" /><line class="route" x1="560" y1="430" x2="525" y2="1160" /><line class="route" x1="235" y1="395" x2="110" y2="780" /><line class="route" x1="235" y1="395" x2="205" y2="135" /><line class="route" x1="235" y1="395" x2="115" y2="560" /><line class="route" x1="745" y1="905" x2="850" y2="690" /><line class="route" x1="745" y1="905" x2="620" y2="855" /><line class="route" x1="745" y1="905" x2="785" y2="1115" /><line class="route" x1="850" y1="690" x2="700" y2="560" /><line class="route" x1="850" y1="690" x2="985" y2="520" /><line class="route route-core" x1="700" y1="560" x2="535" y2="640" /><line class="route" x1="700" y1="560" x2="535" y2="1035" /><line class="route route-core" x1="535" y1="640" x2="460" y2="805" /><line class="route route-core" x1="535" y1="640" x2="620" y2="855" /><line class="route route-core" x1="535" y1="640" x2="985" y2="520" /><line class="route route-core" x1="535" y1="640" x2="800" y2="805" /><line class="route route-core" x1="535" y1="640" x2="115" y2="560" /><line class="route" x1="460" y1="805" x2="380" y2="950" /><line class="route" x1="460" y1="805" x2="455" y2="100" /><line class="route" x1="380" y1="950" x2="225" y2="1055" /><line class="route" x1="380" y1="950" x2="535" y2="1035" /><line class="route" x1="225" y1="1055" x2="110" y2="780" /><line class="route" x1="225" y1="1055" x2="340" y2="1215" /><line class="route" x1="110" y1="780" x2="525" y2="1160" /><line class="route" x1="110" y1="780" x2="115" y2="560" /><line class="route" x1="315" y1="170" x2="455" y2="100" /><line class="route" x1="315" y1="170" x2="205" y2="135" /><line class="route" x1="455" y1="100" x2="205" y2="135" /><line class="route" x1="205" y1="135" x2="620" y2="855" /><line class="route" x1="620" y1="855" x2="785" y2="1115" /><line class="route" x1="785" y1="1115" x2="525" y2="1160" /><line class="route" x1="525" y1="1160" x2="340" y2="1215" /><line class="route" x1="985" y1="520" x2="915" y2="1050" /><line class="route" x1="340" y1="1215" x2="535" y2="1035" /><line class="route" x1="535" y1="1035" x2="915" y2="1050" /><line class="route" x1="915" y1="1050" x2="800" y2="805" /><line class="route" x1="800" y1="805" x2="115" y2="560" />
+      
+      
+        <g class="district-node " transform="translate(420 285)">
+          <circle r="43" fill="#6b5e9f" opacity="0.18"></circle>
+          <circle r="34" fill="#6b5e9f"></circle>
+          <text class="node-id" y="8">01</text>
+        </g>
+        <g class="district-node " transform="translate(560 430)">
+          <circle r="43" fill="#405d87" opacity="0.18"></circle>
+          <circle r="34" fill="#405d87"></circle>
+          <text class="node-id" y="8">02</text>
+        </g>
+        <g class="district-node " transform="translate(235 395)">
+          <circle r="43" fill="#24747d" opacity="0.18"></circle>
+          <circle r="34" fill="#24747d"></circle>
+          <text class="node-id" y="8">03</text>
+        </g>
+        <g class="district-node " transform="translate(745 905)">
+          <circle r="43" fill="#8f6d2f" opacity="0.18"></circle>
+          <circle r="34" fill="#8f6d2f"></circle>
+          <text class="node-id" y="8">04</text>
+        </g>
+        <g class="district-node " transform="translate(850 690)">
+          <circle r="43" fill="#2f7661" opacity="0.18"></circle>
+          <circle r="34" fill="#2f7661"></circle>
+          <text class="node-id" y="8">05</text>
+        </g>
+        <g class="district-node " transform="translate(700 560)">
+          <circle r="43" fill="#8f6d2f" opacity="0.18"></circle>
+          <circle r="34" fill="#8f6d2f"></circle>
+          <text class="node-id" y="8">06</text>
+        </g>
+        <g class="district-node core-node" transform="translate(535 640)">
+          <circle r="54" fill="#b24a3d" opacity="0.18"></circle>
+          <circle r="45" fill="#b24a3d"></circle>
+          <text class="node-id" y="8">07</text>
+        </g>
+        <g class="district-node " transform="translate(460 805)">
+          <circle r="43" fill="#2f7661" opacity="0.18"></circle>
+          <circle r="34" fill="#2f7661"></circle>
+          <text class="node-id" y="8">08</text>
+        </g>
+        <g class="district-node " transform="translate(380 950)">
+          <circle r="43" fill="#8a5b86" opacity="0.18"></circle>
+          <circle r="34" fill="#8a5b86"></circle>
+          <text class="node-id" y="8">09</text>
+        </g>
+        <g class="district-node " transform="translate(225 1055)">
+          <circle r="43" fill="#725444" opacity="0.18"></circle>
+          <circle r="34" fill="#725444"></circle>
+          <text class="node-id" y="8">10</text>
+        </g>
+        <g class="district-node " transform="translate(110 780)">
+          <circle r="43" fill="#24747d" opacity="0.18"></circle>
+          <circle r="34" fill="#24747d"></circle>
+          <text class="node-id" y="8">11</text>
+        </g>
+        <g class="district-node " transform="translate(315 170)">
+          <circle r="43" fill="#6d6092" opacity="0.18"></circle>
+          <circle r="34" fill="#6d6092"></circle>
+          <text class="node-id" y="8">12</text>
+        </g>
+        <g class="district-node " transform="translate(455 100)">
+          <circle r="43" fill="#2f7661" opacity="0.18"></circle>
+          <circle r="34" fill="#2f7661"></circle>
+          <text class="node-id" y="8">13</text>
+        </g>
+        <g class="district-node " transform="translate(205 135)">
+          <circle r="43" fill="#24747d" opacity="0.18"></circle>
+          <circle r="34" fill="#24747d"></circle>
+          <text class="node-id" y="8">14</text>
+        </g>
+        <g class="district-node " transform="translate(620 855)">
+          <circle r="43" fill="#9a5b2e" opacity="0.18"></circle>
+          <circle r="34" fill="#9a5b2e"></circle>
+          <text class="node-id" y="8">15</text>
+        </g>
+        <g class="district-node " transform="translate(785 1115)">
+          <circle r="43" fill="#8f6d2f" opacity="0.18"></circle>
+          <circle r="34" fill="#8f6d2f"></circle>
+          <text class="node-id" y="8">16</text>
+        </g>
+        <g class="district-node " transform="translate(525 1160)">
+          <circle r="43" fill="#676f7a" opacity="0.18"></circle>
+          <circle r="34" fill="#676f7a"></circle>
+          <text class="node-id" y="8">17</text>
+        </g>
+        <g class="district-node " transform="translate(985 520)">
+          <circle r="43" fill="#2f7661" opacity="0.18"></circle>
+          <circle r="34" fill="#2f7661"></circle>
+          <text class="node-id" y="8">18</text>
+        </g>
+        <g class="district-node " transform="translate(340 1215)">
+          <circle r="43" fill="#725444" opacity="0.18"></circle>
+          <circle r="34" fill="#725444"></circle>
+          <text class="node-id" y="8">19</text>
+        </g>
+        <g class="district-node " transform="translate(535 1035)">
+          <circle r="43" fill="#3d7774" opacity="0.18"></circle>
+          <circle r="34" fill="#3d7774"></circle>
+          <text class="node-id" y="8">20</text>
+        </g>
+        <g class="district-node " transform="translate(915 1050)">
+          <circle r="43" fill="#4f7d42" opacity="0.18"></circle>
+          <circle r="34" fill="#4f7d42"></circle>
+          <text class="node-id" y="8">21</text>
+        </g>
+        <g class="district-node " transform="translate(800 805)">
+          <circle r="43" fill="#5c6475" opacity="0.18"></circle>
+          <circle r="34" fill="#5c6475"></circle>
+          <text class="node-id" y="8">22</text>
+        </g>
+        <g class="district-node " transform="translate(115 560)">
+          <circle r="43" fill="#24747d" opacity="0.18"></circle>
+          <circle r="34" fill="#24747d"></circle>
+          <text class="node-id" y="8">23</text>
+        </g>
+    </svg></div>
+      <div class="legend">
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#6b5e9f">01</div>
+        <div>
+          <h3>第一学区<span>司法行政区</span></h3>
+          <p>司法、行政、统括理事会相关机关集中，权限审查严格。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#405d87">02</div>
+        <div>
+          <h3>第二学区<span>警备训练区</span></h3>
+          <p>警备员与风纪委员训练机构、新武器开发设施所在地。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#24747d">03</div>
+        <div>
+          <h3>第三学区<span>外交展示区</span></h3>
+          <p>对外展示设施、访客住宿和外部交流窗口集中。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#8f6d2f">04</div>
+        <div>
+          <h3>第四学区<span>餐饮与农业大楼</span></h3>
+          <p>食品店、世界料理和农业大楼密集，日常补给充足。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#2f7661">05</div>
+        <div>
+          <h3>第五学区<span>大学区</span></h3>
+          <p>大学、高级店铺和学术研究委托常在此流转。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#8f6d2f">06</div>
+        <div>
+          <h3>第六学区<span>娱乐休闲区</span></h3>
+          <p>娱乐设施为主的休闲学区，活动丰富，传闻流动快。</p>
+        </div>
+      </article>
+      <article class="legend-card is-core">
+        <div class="legend-num" style="--accent:#b24a3d">07</div>
+        <div>
+          <h3>第七学区<span>中心学区</span></h3>
+          <p>故事主舞台。学校、医院、商业街和传闻在这里交汇。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#2f7661">08</div>
+        <div>
+          <h3>第八学区<span>教师住宿区</span></h3>
+          <p>教师住宅与教育设施集中，治安相对安静。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#8a5b86">09</div>
+        <div>
+          <h3>第九学区<span>工艺美术区</span></h3>
+          <p>工艺、美术和特殊教育设施集中，适合制作道具。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#725444">10</div>
+        <div>
+          <h3>第十学区<span>墓地与少年院</span></h3>
+          <p>墓地、少年院和高风险设施并存，都市阴影较重。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#24747d">11</div>
+        <div>
+          <h3>第十一学区<span>陆路物流口</span></h3>
+          <p>学院都市陆路枢纽口，物流车队与边界检查密集。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#6d6092">12</div>
+        <div>
+          <h3>第十二学区<span>宗教与神学研究区</span></h3>
+          <p>宗教设施与神学研究学校分布，异国氛围浓厚。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#2f7661">13</div>
+        <div>
+          <h3>第十三学区<span>幼小教育区</span></h3>
+          <p>幼儿园与小学为主，儿童能力开发相关传闻不少。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#24747d">14</div>
+        <div>
+          <h3>第十四学区<span>留学生区</span></h3>
+          <p>海外留学生众多，多语种告示和外部文化交错。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#9a5b2e">15</div>
+        <div>
+          <h3>第十五学区<span>商业与媒体中心</span></h3>
+          <p>最大商业中心，电视台、大众传媒和大型屏幕密集。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#8f6d2f">16</div>
+        <div>
+          <h3>第十六学区<span>学生打工区</span></h3>
+          <p>学生兼职设施集中，适合打工、跑腿和小额委托。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#676f7a">17</div>
+        <div>
+          <h3>第十七学区<span>工业制造区</span></h3>
+          <p>制造工厂和高度机械化设施集中，也有监狱传闻。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#2f7661">18</div>
+        <div>
+          <h3>第十八学区<span>能力开发名校区</span></h3>
+          <p>名校和附属研究机构集中，优等生与研究委托很多。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#725444">19</div>
+        <div>
+          <h3>第十九学区<span>再开发失败区</span></h3>
+          <p>再开发失败后的荒凉学区，废弃建筑和可疑交易较多。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#3d7774">20</div>
+        <div>
+          <h3>第二十学区<span>运动工学区</span></h3>
+          <p>运动工学学校与都市运动协会本部所在地。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#4f7d42">21</div>
+        <div>
+          <h3>第二十一学区<span>水源与山岳区</span></h3>
+          <p>水源、水库、山岳与天文台所在地，自然地貌较多。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#5c6475">22</div>
+        <div>
+          <h3>第二十二学区<span>地下街区</span></h3>
+          <p>面积小但地下高度发达，地下街和垂直轴风力设施复杂。</p>
+        </div>
+      </article>
+      <article class="legend-card ">
+        <div class="legend-num" style="--accent:#24747d">23</div>
+        <div>
+          <h3>第二十三学区<span>航空宇宙区</span></h3>
+          <p>航空、宇宙产业特化学区，拥有学院都市唯一机场。</p>
+        </div>
+      </article></div>
+    </div>
+    <div class="note-band">
+      <div class="note"><b>移动规则</b><span>每小时行动只能前往当前位置相邻节点，不能跨图瞬移。</span></div>
+      <div class="note"><b>剧情触发</b><span>玩家、NPC 或事件在同一地点交汇时，下一轮结算可能产生互动。</span></div>
+      <div class="note"><b>默认主舞台</b><span>第七学区是中心区域，内部地点另有细节图。</span></div>
+    </div>
+    <div class="chips">
+      <div class="chip" style="--accent:#6b5e9f">
+        <b>01</b><span>第一学区</span>
+      </div>
+      <div class="chip" style="--accent:#405d87">
+        <b>02</b><span>第二学区</span>
+      </div>
+      <div class="chip" style="--accent:#24747d">
+        <b>03</b><span>第三学区</span>
+      </div>
+      <div class="chip" style="--accent:#8f6d2f">
+        <b>04</b><span>第四学区</span>
+      </div>
+      <div class="chip" style="--accent:#2f7661">
+        <b>05</b><span>第五学区</span>
+      </div>
+      <div class="chip" style="--accent:#8f6d2f">
+        <b>06</b><span>第六学区</span>
+      </div>
+      <div class="chip" style="--accent:#b24a3d">
+        <b>07</b><span>第七学区</span>
+      </div>
+      <div class="chip" style="--accent:#2f7661">
+        <b>08</b><span>第八学区</span>
+      </div>
+      <div class="chip" style="--accent:#8a5b86">
+        <b>09</b><span>第九学区</span>
+      </div>
+      <div class="chip" style="--accent:#725444">
+        <b>10</b><span>第十学区</span>
+      </div>
+      <div class="chip" style="--accent:#24747d">
+        <b>11</b><span>第十一学区</span>
+      </div>
+      <div class="chip" style="--accent:#6d6092">
+        <b>12</b><span>第十二学区</span>
+      </div>
+      <div class="chip" style="--accent:#2f7661">
+        <b>13</b><span>第十三学区</span>
+      </div>
+      <div class="chip" style="--accent:#24747d">
+        <b>14</b><span>第十四学区</span>
+      </div>
+      <div class="chip" style="--accent:#9a5b2e">
+        <b>15</b><span>第十五学区</span>
+      </div>
+      <div class="chip" style="--accent:#8f6d2f">
+        <b>16</b><span>第十六学区</span>
+      </div>
+      <div class="chip" style="--accent:#676f7a">
+        <b>17</b><span>第十七学区</span>
+      </div>
+      <div class="chip" style="--accent:#2f7661">
+        <b>18</b><span>第十八学区</span>
+      </div>
+      <div class="chip" style="--accent:#725444">
+        <b>19</b><span>第十九学区</span>
+      </div>
+      <div class="chip" style="--accent:#3d7774">
+        <b>20</b><span>第二十学区</span>
+      </div>
+      <div class="chip" style="--accent:#4f7d42">
+        <b>21</b><span>第二十一学区</span>
+      </div>
+      <div class="chip" style="--accent:#5c6475">
+        <b>22</b><span>第二十二学区</span>
+      </div>
+      <div class="chip" style="--accent:#24747d">
+        <b>23</b><span>第二十三学区</span>
+      </div></div>
+    <div class="footer">
+      <span>数据来源：插件内置 DEFAULT_LOCATIONS 路线。</span>
+      <span>版本：Academy City Map / 2026-05-08</span>
+    </div>
+  </section>
+
+  <section class="sheet" id="map-routes">
+    <div class="title-row">
+      <div>
+        <h1>学园都市路线图</h1>
+        <p class="subtitle">用于判断角色本轮能否抵达目标地点。玩家行动、NPC移动和公共事件投放，都建议以这张路线图为准。</p>
+      </div>
+      <div class="stamp">移动判定用</div>
+    </div>
+    <div class="wide-layout">
+      <div class="map-panel">
+    <svg class="city-svg" viewBox="0 0 1110 1330" role="img" aria-label="学院都市二十三学区路线地图">
+      <defs>
+        <filter id="nodeShadow" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#1f2d3d" flood-opacity="0.22"/>
+        </filter>
+        <linearGradient id="mapWater" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="#dbece8"/>
+          <stop offset="1" stop-color="#edf2e2"/>
+        </linearGradient>
+      </defs>
+      <rect x="35" y="35" width="1040" height="1260" rx="42" fill="url(#mapWater)" opacity="0.72"></rect>
+      <path d="M60 380 C180 300 270 275 395 275 C585 275 730 330 860 450 C995 575 1035 775 930 980 C835 1168 650 1280 420 1270 C235 1263 105 1165 85 1008 C64 842 148 735 112 585 C92 500 15 460 60 380Z" fill="#fff8ec" opacity="0.78" stroke="#d4c6ac" stroke-width="3"></path>
+      <path d="M805 120 C925 190 1003 278 1050 398" class="terrain-line"></path>
+      <path d="M780 1165 C900 1088 970 990 1028 865" class="terrain-line"></path>
+      <path d="M130 1190 C220 1235 345 1260 463 1242" class="terrain-line"></path>
+      <line class="route" x1="420" y1="285" x2="560" y2="430" /><line class="route" x1="420" y1="285" x2="235" y2="395" /><line class="route route-core" x1="420" y1="285" x2="535" y2="640" /><line class="route" x1="420" y1="285" x2="315" y2="170" /><line class="route route-core" x1="560" y1="430" x2="535" y2="640" /><line class="route" x1="560" y1="430" x2="525" y2="1160" /><line class="route" x1="235" y1="395" x2="110" y2="780" /><line class="route" x1="235" y1="395" x2="205" y2="135" /><line class="route" x1="235" y1="395" x2="115" y2="560" /><line class="route" x1="745" y1="905" x2="850" y2="690" /><line class="route" x1="745" y1="905" x2="620" y2="855" /><line class="route" x1="745" y1="905" x2="785" y2="1115" /><line class="route" x1="850" y1="690" x2="700" y2="560" /><line class="route" x1="850" y1="690" x2="985" y2="520" /><line class="route route-core" x1="700" y1="560" x2="535" y2="640" /><line class="route" x1="700" y1="560" x2="535" y2="1035" /><line class="route route-core" x1="535" y1="640" x2="460" y2="805" /><line class="route route-core" x1="535" y1="640" x2="620" y2="855" /><line class="route route-core" x1="535" y1="640" x2="985" y2="520" /><line class="route route-core" x1="535" y1="640" x2="800" y2="805" /><line class="route route-core" x1="535" y1="640" x2="115" y2="560" /><line class="route" x1="460" y1="805" x2="380" y2="950" /><line class="route" x1="460" y1="805" x2="455" y2="100" /><line class="route" x1="380" y1="950" x2="225" y2="1055" /><line class="route" x1="380" y1="950" x2="535" y2="1035" /><line class="route" x1="225" y1="1055" x2="110" y2="780" /><line class="route" x1="225" y1="1055" x2="340" y2="1215" /><line class="route" x1="110" y1="780" x2="525" y2="1160" /><line class="route" x1="110" y1="780" x2="115" y2="560" /><line class="route" x1="315" y1="170" x2="455" y2="100" /><line class="route" x1="315" y1="170" x2="205" y2="135" /><line class="route" x1="455" y1="100" x2="205" y2="135" /><line class="route" x1="205" y1="135" x2="620" y2="855" /><line class="route" x1="620" y1="855" x2="785" y2="1115" /><line class="route" x1="785" y1="1115" x2="525" y2="1160" /><line class="route" x1="525" y1="1160" x2="340" y2="1215" /><line class="route" x1="985" y1="520" x2="915" y2="1050" /><line class="route" x1="340" y1="1215" x2="535" y2="1035" /><line class="route" x1="535" y1="1035" x2="915" y2="1050" /><line class="route" x1="915" y1="1050" x2="800" y2="805" /><line class="route" x1="800" y1="805" x2="115" y2="560" />
+      <text class="route-code" x="490" y="357.5">01-02</text><text class="route-code" x="477.5" y="462.5">01-07</text><text class="route-code" x="367.5" y="227.5">01-12</text><text class="route-code" x="547.5" y="535">02-07</text><text class="route-code" x="172.5" y="587.5">03-11</text><text class="route-code" x="797.5" y="797.5">04-05</text><text class="route-code" x="775" y="625">05-06</text><text class="route-code" x="617.5" y="600">06-07</text><text class="route-code" x="617.5" y="797.5">06-20</text><text class="route-code" x="497.5" y="722.5">07-08</text><text class="route-code" x="577.5" y="747.5">07-15</text><text class="route-code" x="760" y="580">07-18</text><text class="route-code" x="667.5" y="722.5">07-22</text><text class="route-code" x="325" y="600">07-23</text><text class="route-code" x="420" y="877.5">08-09</text><text class="route-code" x="457.5" y="992.5">09-20</text><text class="route-code" x="317.5" y="970">11-17</text><text class="route-code" x="260" y="152.5">12-14</text><text class="route-code" x="702.5" y="985">15-16</text><text class="route-code" x="950" y="785">18-21</text><text class="route-code" x="857.5" y="927.5">21-22</text>
+      
+        <g class="district-node " transform="translate(420 285)">
+          <circle r="43" fill="#6b5e9f" opacity="0.18"></circle>
+          <circle r="34" fill="#6b5e9f"></circle>
+          <text class="node-id" y="8">01</text>
+        </g>
+        <g class="district-node " transform="translate(560 430)">
+          <circle r="43" fill="#405d87" opacity="0.18"></circle>
+          <circle r="34" fill="#405d87"></circle>
+          <text class="node-id" y="8">02</text>
+        </g>
+        <g class="district-node " transform="translate(235 395)">
+          <circle r="43" fill="#24747d" opacity="0.18"></circle>
+          <circle r="34" fill="#24747d"></circle>
+          <text class="node-id" y="8">03</text>
+        </g>
+        <g class="district-node " transform="translate(745 905)">
+          <circle r="43" fill="#8f6d2f" opacity="0.18"></circle>
+          <circle r="34" fill="#8f6d2f"></circle>
+          <text class="node-id" y="8">04</text>
+        </g>
+        <g class="district-node " transform="translate(850 690)">
+          <circle r="43" fill="#2f7661" opacity="0.18"></circle>
+          <circle r="34" fill="#2f7661"></circle>
+          <text class="node-id" y="8">05</text>
+        </g>
+        <g class="district-node " transform="translate(700 560)">
+          <circle r="43" fill="#8f6d2f" opacity="0.18"></circle>
+          <circle r="34" fill="#8f6d2f"></circle>
+          <text class="node-id" y="8">06</text>
+        </g>
+        <g class="district-node core-node" transform="translate(535 640)">
+          <circle r="54" fill="#b24a3d" opacity="0.18"></circle>
+          <circle r="45" fill="#b24a3d"></circle>
+          <text class="node-id" y="8">07</text>
+        </g>
+        <g class="district-node " transform="translate(460 805)">
+          <circle r="43" fill="#2f7661" opacity="0.18"></circle>
+          <circle r="34" fill="#2f7661"></circle>
+          <text class="node-id" y="8">08</text>
+        </g>
+        <g class="district-node " transform="translate(380 950)">
+          <circle r="43" fill="#8a5b86" opacity="0.18"></circle>
+          <circle r="34" fill="#8a5b86"></circle>
+          <text class="node-id" y="8">09</text>
+        </g>
+        <g class="district-node " transform="translate(225 1055)">
+          <circle r="43" fill="#725444" opacity="0.18"></circle>
+          <circle r="34" fill="#725444"></circle>
+          <text class="node-id" y="8">10</text>
+        </g>
+        <g class="district-node " transform="translate(110 780)">
+          <circle r="43" fill="#24747d" opacity="0.18"></circle>
+          <circle r="34" fill="#24747d"></circle>
+          <text class="node-id" y="8">11</text>
+        </g>
+        <g class="district-node " transform="translate(315 170)">
+          <circle r="43" fill="#6d6092" opacity="0.18"></circle>
+          <circle r="34" fill="#6d6092"></circle>
+          <text class="node-id" y="8">12</text>
+        </g>
+        <g class="district-node " transform="translate(455 100)">
+          <circle r="43" fill="#2f7661" opacity="0.18"></circle>
+          <circle r="34" fill="#2f7661"></circle>
+          <text class="node-id" y="8">13</text>
+        </g>
+        <g class="district-node " transform="translate(205 135)">
+          <circle r="43" fill="#24747d" opacity="0.18"></circle>
+          <circle r="34" fill="#24747d"></circle>
+          <text class="node-id" y="8">14</text>
+        </g>
+        <g class="district-node " transform="translate(620 855)">
+          <circle r="43" fill="#9a5b2e" opacity="0.18"></circle>
+          <circle r="34" fill="#9a5b2e"></circle>
+          <text class="node-id" y="8">15</text>
+        </g>
+        <g class="district-node " transform="translate(785 1115)">
+          <circle r="43" fill="#8f6d2f" opacity="0.18"></circle>
+          <circle r="34" fill="#8f6d2f"></circle>
+          <text class="node-id" y="8">16</text>
+        </g>
+        <g class="district-node " transform="translate(525 1160)">
+          <circle r="43" fill="#676f7a" opacity="0.18"></circle>
+          <circle r="34" fill="#676f7a"></circle>
+          <text class="node-id" y="8">17</text>
+        </g>
+        <g class="district-node " transform="translate(985 520)">
+          <circle r="43" fill="#2f7661" opacity="0.18"></circle>
+          <circle r="34" fill="#2f7661"></circle>
+          <text class="node-id" y="8">18</text>
+        </g>
+        <g class="district-node " transform="translate(340 1215)">
+          <circle r="43" fill="#725444" opacity="0.18"></circle>
+          <circle r="34" fill="#725444"></circle>
+          <text class="node-id" y="8">19</text>
+        </g>
+        <g class="district-node " transform="translate(535 1035)">
+          <circle r="43" fill="#3d7774" opacity="0.18"></circle>
+          <circle r="34" fill="#3d7774"></circle>
+          <text class="node-id" y="8">20</text>
+        </g>
+        <g class="district-node " transform="translate(915 1050)">
+          <circle r="43" fill="#4f7d42" opacity="0.18"></circle>
+          <circle r="34" fill="#4f7d42"></circle>
+          <text class="node-id" y="8">21</text>
+        </g>
+        <g class="district-node " transform="translate(800 805)">
+          <circle r="43" fill="#5c6475" opacity="0.18"></circle>
+          <circle r="34" fill="#5c6475"></circle>
+          <text class="node-id" y="8">22</text>
+        </g>
+        <g class="district-node " transform="translate(115 560)">
+          <circle r="43" fill="#24747d" opacity="0.18"></circle>
+          <circle r="34" fill="#24747d"></circle>
+          <text class="node-id" y="8">23</text>
+        </g>
+    </svg></div>
+      <div class="route-card">
+        <h2>阅读方式</h2>
+        <p>圆点代表学区编号，连线代表一小时内允许移动的相邻路线。没有连线的两个学区，需要分多轮移动。</p>
+        <div class="route-list">01 第一学区 ↔ 02 第二学区 / 01 第一学区 ↔ 03 第三学区 / 01 第一学区 ↔ 07 第七学区 / 01 第一学区 ↔ 12 第十二学区 / 02 第二学区 ↔ 07 第七学区 / 02 第二学区 ↔ 17 第十七学区 / 03 第三学区 ↔ 11 第十一学区 / 03 第三学区 ↔ 14 第十四学区 / 03 第三学区 ↔ 23 第二十三学区 / 04 第四学区 ↔ 05 第五学区 / 04 第四学区 ↔ 15 第十五学区 / 04 第四学区 ↔ 16 第十六学区 / 05 第五学区 ↔ 06 第六学区 / 05 第五学区 ↔ 18 第十八学区 / 06 第六学区 ↔ 07 第七学区 / 06 第六学区 ↔ 20 第二十学区 / 07 第七学区 ↔ 08 第八学区 / 07 第七学区 ↔ 15 第十五学区 / 07 第七学区 ↔ 18 第十八学区 / 07 第七学区 ↔ 22 第二十二学区 / 07 第七学区 ↔ 23 第二十三学区 / 08 第八学区 ↔ 09 第九学区 / 08 第八学区 ↔ 13 第十三学区 / 09 第九学区 ↔ 10 第十学区 / 09 第九学区 ↔ 20 第二十学区 / 10 第十学区 ↔ 11 第十一学区 / 10 第十学区 ↔ 19 第十九学区 / 11 第十一学区 ↔ 17 第十七学区 / 11 第十一学区 ↔ 23 第二十三学区 / 12 第十二学区 ↔ 13 第十三学区 / 12 第十二学区 ↔ 14 第十四学区 / 13 第十三学区 ↔ 14 第十四学区 / 14 第十四学区 ↔ 15 第十五学区 / 15 第十五学区 ↔ 16 第十六学区 / 16 第十六学区 ↔ 17 第十七学区 / 17 第十七学区 ↔ 19 第十九学区 / 18 第十八学区 ↔ 21 第二十一学区 / 19 第十九学区 ↔ 20 第二十学区 / 20 第二十学区 ↔ 21 第二十一学区 / 21 第二十一学区 ↔ 22 第二十二学区 / 22 第二十二学区 ↔ 23 第二十三学区</div>
+      </div>
+    </div>
+    <div class="route-card" style="margin-top: 30px;">
+      <h2>相邻地点速查</h2>
+      <table>
+        <tbody>
+      <tr>
+        <th>01</th>
+        <td>第一学区</td>
+        <td>02 第二学区、03 第三学区、07 第七学区、12 第十二学区</td>
+      </tr>
+      <tr>
+        <th>02</th>
+        <td>第二学区</td>
+        <td>01 第一学区、07 第七学区、17 第十七学区</td>
+      </tr>
+      <tr>
+        <th>03</th>
+        <td>第三学区</td>
+        <td>01 第一学区、11 第十一学区、14 第十四学区、23 第二十三学区</td>
+      </tr>
+      <tr>
+        <th>04</th>
+        <td>第四学区</td>
+        <td>05 第五学区、15 第十五学区、16 第十六学区</td>
+      </tr>
+      <tr>
+        <th>05</th>
+        <td>第五学区</td>
+        <td>04 第四学区、06 第六学区、18 第十八学区</td>
+      </tr>
+      <tr>
+        <th>06</th>
+        <td>第六学区</td>
+        <td>05 第五学区、07 第七学区、20 第二十学区</td>
+      </tr>
+      <tr>
+        <th>07</th>
+        <td>第七学区</td>
+        <td>01 第一学区、02 第二学区、06 第六学区、08 第八学区、15 第十五学区、18 第十八学区、22 第二十二学区、23 第二十三学区</td>
+      </tr>
+      <tr>
+        <th>08</th>
+        <td>第八学区</td>
+        <td>07 第七学区、09 第九学区、13 第十三学区</td>
+      </tr>
+      <tr>
+        <th>09</th>
+        <td>第九学区</td>
+        <td>08 第八学区、10 第十学区、20 第二十学区</td>
+      </tr>
+      <tr>
+        <th>10</th>
+        <td>第十学区</td>
+        <td>09 第九学区、11 第十一学区、19 第十九学区</td>
+      </tr>
+      <tr>
+        <th>11</th>
+        <td>第十一学区</td>
+        <td>03 第三学区、10 第十学区、17 第十七学区、23 第二十三学区</td>
+      </tr>
+      <tr>
+        <th>12</th>
+        <td>第十二学区</td>
+        <td>01 第一学区、13 第十三学区、14 第十四学区</td>
+      </tr>
+      <tr>
+        <th>13</th>
+        <td>第十三学区</td>
+        <td>08 第八学区、12 第十二学区、14 第十四学区</td>
+      </tr>
+      <tr>
+        <th>14</th>
+        <td>第十四学区</td>
+        <td>03 第三学区、12 第十二学区、13 第十三学区、15 第十五学区</td>
+      </tr>
+      <tr>
+        <th>15</th>
+        <td>第十五学区</td>
+        <td>04 第四学区、07 第七学区、14 第十四学区、16 第十六学区</td>
+      </tr>
+      <tr>
+        <th>16</th>
+        <td>第十六学区</td>
+        <td>04 第四学区、15 第十五学区、17 第十七学区</td>
+      </tr>
+      <tr>
+        <th>17</th>
+        <td>第十七学区</td>
+        <td>02 第二学区、11 第十一学区、16 第十六学区、19 第十九学区</td>
+      </tr>
+      <tr>
+        <th>18</th>
+        <td>第十八学区</td>
+        <td>05 第五学区、07 第七学区、21 第二十一学区</td>
+      </tr>
+      <tr>
+        <th>19</th>
+        <td>第十九学区</td>
+        <td>10 第十学区、17 第十七学区、20 第二十学区</td>
+      </tr>
+      <tr>
+        <th>20</th>
+        <td>第二十学区</td>
+        <td>06 第六学区、09 第九学区、19 第十九学区、21 第二十一学区</td>
+      </tr>
+      <tr>
+        <th>21</th>
+        <td>第二十一学区</td>
+        <td>18 第十八学区、20 第二十学区、22 第二十二学区</td>
+      </tr>
+      <tr>
+        <th>22</th>
+        <td>第二十二学区</td>
+        <td>07 第七学区、21 第二十一学区、23 第二十三学区</td>
+      </tr>
+      <tr>
+        <th>23</th>
+        <td>第二十三学区</td>
+        <td>03 第三学区、07 第七学区、11 第十一学区、22 第二十二学区</td>
+      </tr></tbody>
+      </table>
+    </div>
+    <div class="footer">
+      <span>红色路线表示连接第七学区的高频路线。</span>
+      <span>路线来自插件默认地图，可后续按客户地图继续替换。</span>
+    </div>
+  </section>
+
+  <section class="sheet" id="map-inner">
+    <div class="title-row">
+      <div>
+        <h1>第七学区细节图</h1>
+        <p class="subtitle">第七学区是默认起点与主要剧情区。字母节点对应右侧地点说明，虚线通向其他学区。</p>
+      </div>
+      <div class="stamp">主舞台细节</div>
+    </div>
+    <div class="inner-layout">
+      <div class="map-panel">
+    <svg class="inner-svg" viewBox="0 0 1120 1220" role="img" aria-label="第七学区细节地图">
+      <defs>
+        <linearGradient id="innerGround" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="#eaf0e8"/>
+          <stop offset="1" stop-color="#f6eadc"/>
+        </linearGradient>
+      </defs>
+      <rect x="35" y="45" width="1040" height="1110" rx="44" fill="url(#innerGround)" stroke="#d4c6ac" stroke-width="3"></rect>
+      <path d="M120 315 H1010" class="main-road"></path>
+      <path d="M500 270 C520 460 510 690 515 970" class="main-road secondary"></path>
+      <path d="M215 755 C395 760 574 770 780 765" class="main-road secondary"></path>
+      <line class="inner-route" x1="250" y1="310" x2="470" y2="325" /><line class="inner-route" x1="250" y1="310" x2="285" y2="520" /><line class="inner-route" x1="250" y1="310" x2="240" y2="755" /><line class="inner-route portal-route" x1="250" y1="310" x2="980" y2="900" /><line class="inner-route" x1="470" y1="325" x2="510" y2="930" /><line class="inner-route" x1="470" y1="325" x2="760" y2="335" /><line class="inner-route portal-route" x1="470" y1="325" x2="910" y2="745" /><line class="inner-route portal-route" x1="470" y1="325" x2="980" y2="900" /><line class="inner-route" x1="285" y1="520" x2="500" y2="555" /><line class="inner-route" x1="285" y1="520" x2="700" y2="520" /><line class="inner-route" x1="285" y1="520" x2="510" y2="930" /><line class="inner-route" x1="500" y1="555" x2="510" y2="930" /><line class="inner-route portal-route" x1="500" y1="555" x2="905" y2="590" /><line class="inner-route" x1="700" y1="520" x2="760" y2="335" /><line class="inner-route portal-route" x1="700" y1="520" x2="930" y2="465" /><line class="inner-route portal-route" x1="700" y1="520" x2="905" y2="590" /><line class="inner-route" x1="240" y1="755" x2="480" y2="790" /><line class="inner-route" x1="240" y1="755" x2="510" y2="930" /><line class="inner-route" x1="480" y1="790" x2="725" y2="770" /><line class="inner-route portal-route" x1="480" y1="790" x2="445" y2="1095" /><line class="inner-route" x1="725" y1="770" x2="510" y2="930" /><line class="inner-route portal-route" x1="725" y1="770" x2="910" y2="745" /><line class="inner-route portal-route" x1="725" y1="770" x2="445" y2="1095" /><line class="inner-route portal-route" x1="510" y1="930" x2="980" y2="900" /><line class="inner-route portal-route" x1="760" y1="335" x2="980" y2="900" />
+      
+        <g class="portal-node" transform="translate(930 465)">
+          <rect x="-57" y="-26" width="114" height="52" rx="20"></rect>
+          <text y="7">02</text>
+        </g>
+        <g class="portal-node" transform="translate(445 1095)">
+          <rect x="-57" y="-26" width="114" height="52" rx="20"></rect>
+          <text y="7">04</text>
+        </g>
+        <g class="portal-node" transform="translate(980 900)">
+          <rect x="-57" y="-26" width="114" height="52" rx="20"></rect>
+          <text y="7">07</text>
+        </g>
+        <g class="portal-node" transform="translate(910 745)">
+          <rect x="-57" y="-26" width="114" height="52" rx="20"></rect>
+          <text y="7">15</text>
+        </g>
+        <g class="portal-node" transform="translate(905 590)">
+          <rect x="-57" y="-26" width="114" height="52" rx="20"></rect>
+          <text y="7">18</text>
+        </g>
+      
+      <g class="inner-node " transform="translate(250 310)">
+        <circle r="43" fill="#b24a3d"></circle>
+        <text class="inner-id" y="8">A</text>
+        <text class="inner-short" y="68">校门口</text>
+      </g>
+      <g class="inner-node " transform="translate(470 325)">
+        <circle r="43" fill="#4f6378"></circle>
+        <text class="inner-id" y="8">B</text>
+        <text class="inner-short" y="68">主干道</text>
+      </g>
+      <g class="inner-node " transform="translate(285 520)">
+        <circle r="43" fill="#2f7661"></circle>
+        <text class="inner-id" y="8">C</text>
+        <text class="inner-short" y="68">某高中</text>
+      </g>
+      <g class="inner-node " transform="translate(500 555)">
+        <circle r="43" fill="#5d6593"></circle>
+        <text class="inner-id" y="8">D</text>
+        <text class="inner-short" y="68">图书馆</text>
+      </g>
+      <g class="inner-node " transform="translate(700 520)">
+        <circle r="43" fill="#6f5c9d"></circle>
+        <text class="inner-id" y="8">E</text>
+        <text class="inner-short" y="68">实验楼</text>
+      </g>
+      <g class="inner-node " transform="translate(240 755)">
+        <circle r="43" fill="#8f6d2f"></circle>
+        <text class="inner-id" y="8">F</text>
+        <text class="inner-short" y="68">宿舍</text>
+      </g>
+      <g class="inner-node " transform="translate(480 790)">
+        <circle r="43" fill="#8f6d2f"></circle>
+        <text class="inner-id" y="8">G</text>
+        <text class="inner-short" y="68">食堂</text>
+      </g>
+      <g class="inner-node " transform="translate(725 770)">
+        <circle r="43" fill="#9a5b2e"></circle>
+        <text class="inner-id" y="8">H</text>
+        <text class="inner-short" y="68">商业街</text>
+      </g>
+      <g class="inner-node inner-core" transform="translate(510 930)">
+        <circle r="43" fill="#b24a3d"></circle>
+        <text class="inner-id" y="8">I</text>
+        <text class="inner-short" y="68">广场</text>
+      </g>
+      <g class="inner-node " transform="translate(760 335)">
+        <circle r="43" fill="#3d7f7b"></circle>
+        <text class="inner-id" y="8">J</text>
+        <text class="inner-short" y="68">医院</text>
+      </g>
+    </svg></div>
+      <div class="legend">
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#b24a3d">A</div>
+        <div>
+          <h3>第七学区校门口<span>校门口</span></h3>
+          <p>日常入口，公告栏、安保亭、校车站都在附近。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#4f6378">B</div>
+        <div>
+          <h3>第七学区主干道<span>主干道</span></h3>
+          <p>连接学校、医院、商业区和中心广场的交通主动脉。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#2f7661">C</div>
+        <div>
+          <h3>第七学区某高中<span>某高中</span></h3>
+          <p>能力开发课程、补习、社团传闻和学生日常从这里开始。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#5d6593">D</div>
+        <div>
+          <h3>书库终端图书馆<span>图书馆</span></h3>
+          <p>可查询公开资料，都市传闻常在书架之间流动。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#6f5c9d">E</div>
+        <div>
+          <h3>能力开发实验楼<span>实验楼</span></h3>
+          <p>进行能力测定、AIM观测和课程实验，出入登记严格。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#8f6d2f">F</div>
+        <div>
+          <h3>第七学区学生宿舍<span>宿舍</span></h3>
+          <p>休息、串门、小交易和深夜传闻的常见发生地。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#8f6d2f">G</div>
+        <div>
+          <h3>学生食堂<span>食堂</span></h3>
+          <p>补充水分和饱食度的稳定地点，连接第四学区补给。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#9a5b2e">H</div>
+        <div>
+          <h3>第十五学区商业街<span>商业街</span></h3>
+          <p>便利店、自动贩卖机、电子产品店和媒体屏幕密集。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#b24a3d">I</div>
+        <div>
+          <h3>第七学区中心广场<span>广场</span></h3>
+          <p>偶遇、公开事件、都市传闻最容易聚集的开阔地。</p>
+        </div>
+      </article>
+      <article class="legend-card compact">
+        <div class="legend-num letter" style="--accent:#3d7f7b">J</div>
+        <div>
+          <h3>冥土追魂医院<span>医院</span></h3>
+          <p>重伤治疗、健康检查和奇怪医学传闻可能发生。</p>
+        </div>
+      </article></div>
+    </div>
+    <div class="route-card small-table" style="margin-top: 30px;">
+      <h2>第七学区相邻地点速查</h2>
+      <table>
+        <tbody>
+      <tr>
+        <th>A</th>
+        <td>第七学区校门口</td>
+        <td>B 第七学区主干道、C 第七学区某高中、F 第七学区学生宿舍、07 第七学区外环</td>
+      </tr>
+      <tr>
+        <th>B</th>
+        <td>第七学区主干道</td>
+        <td>A 第七学区校门口、I 第七学区中心广场、J 冥土追魂医院、15 第十五学区、07 第七学区外环</td>
+      </tr>
+      <tr>
+        <th>C</th>
+        <td>第七学区某高中</td>
+        <td>A 第七学区校门口、D 书库终端图书馆、E 能力开发实验楼、I 第七学区中心广场</td>
+      </tr>
+      <tr>
+        <th>D</th>
+        <td>书库终端图书馆</td>
+        <td>C 第七学区某高中、I 第七学区中心广场、18 第十八学区</td>
+      </tr>
+      <tr>
+        <th>E</th>
+        <td>能力开发实验楼</td>
+        <td>C 第七学区某高中、J 冥土追魂医院、02 第二学区、18 第十八学区</td>
+      </tr>
+      <tr>
+        <th>F</th>
+        <td>第七学区学生宿舍</td>
+        <td>A 第七学区校门口、G 学生食堂、I 第七学区中心广场</td>
+      </tr>
+      <tr>
+        <th>G</th>
+        <td>学生食堂</td>
+        <td>F 第七学区学生宿舍、H 第十五学区商业街、04 第四学区</td>
+      </tr>
+      <tr>
+        <th>H</th>
+        <td>第十五学区商业街</td>
+        <td>G 学生食堂、I 第七学区中心广场、15 第十五学区、04 第四学区</td>
+      </tr>
+      <tr>
+        <th>I</th>
+        <td>第七学区中心广场</td>
+        <td>B 第七学区主干道、C 第七学区某高中、D 书库终端图书馆、F 第七学区学生宿舍、H 第十五学区商业街、07 第七学区外环</td>
+      </tr>
+      <tr>
+        <th>J</th>
+        <td>冥土追魂医院</td>
+        <td>B 第七学区主干道、E 能力开发实验楼、07 第七学区外环</td>
+      </tr>
+      <tr>
+        <th>02</th>
+        <td>第二学区</td>
+        <td>E 能力开发实验楼</td>
+      </tr>
+      <tr>
+        <th>04</th>
+        <td>第四学区</td>
+        <td>G 学生食堂、H 第十五学区商业街</td>
+      </tr>
+      <tr>
+        <th>07</th>
+        <td>第七学区外环</td>
+        <td>A 第七学区校门口、B 第七学区主干道、I 第七学区中心广场、J 冥土追魂医院</td>
+      </tr>
+      <tr>
+        <th>15</th>
+        <td>第十五学区</td>
+        <td>B 第七学区主干道、H 第十五学区商业街</td>
+      </tr>
+      <tr>
+        <th>18</th>
+        <td>第十八学区</td>
+        <td>D 书库终端图书馆、E 能力开发实验楼</td>
+      </tr></tbody>
+      </table>
+    </div>
+    <div class="note-band">
+      <div class="note"><b>补给地点</b><span>食堂、商业街适合恢复水分与饱食度，也适合商店和签到奖励落点。</span></div>
+      <div class="note"><b>情报地点</b><span>图书馆、中心广场适合投放传闻、新闻、公共事件线索。</span></div>
+      <div class="note"><b>风险地点</b><span>实验楼、医院可承接能力开发、受伤恢复和异常事件。</span></div>
+    </div>
+    <div class="footer">
+      <span>虚线：可接入外部学区。实线：第七学区内部移动。</span>
+      <span>建议将此图放入玩家说明书或 WebUI 地图页。</span>
+    </div>
+  </section>
+</body>
+</html>
