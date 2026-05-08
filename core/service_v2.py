@@ -50,6 +50,13 @@ class TextWorldService:
             self.config.event_cycle_minutes,
         )
 
+    def world_is_enabled(self, group_id: str) -> bool:
+        group_id = str(group_id or "").strip()
+        if not group_id:
+            return False
+        row = self.db.fetch_one("SELECT enabled FROM worlds WHERE group_id=?", (group_id,))
+        return bool(row and int(row.get("enabled") or 0) == 1)
+
     def create_character_request(
         self,
         group_id: str,
@@ -74,6 +81,11 @@ class TextWorldService:
         power_level = self.clean_text(power_level, 20) or "Level 0"
         if not game_name or not identity:
             return False, "格式：创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级"
+        card_cheat = self.character_card_cheat_reason(
+            " ".join([game_name, identity, faction, ability, power_level])
+        )
+        if card_cheat:
+            return False, card_cheat
         now = utc_now_iso()
         status = "approved" if approve else "pending"
 
@@ -1086,6 +1098,36 @@ class TextWorldService:
                 return f"行动被反作弊拦截：包含高风险词“{pattern}”。"
         if re.search(r"(给我|获得|增加).{0,8}([0-9]{4,}|无限).{0,8}(学都币|金币|钱)", text):
             return "行动被反作弊拦截：不能直接刷取大量货币。"
+        return ""
+
+    def character_card_cheat_reason(self, text: str) -> str:
+        raw = str(text or "")
+        lowered = raw.lower()
+        compact = re.sub(r"\s+", "", lowered)
+        hard_blocks = (
+            "绝对能力者",
+            "level6",
+            "lv6",
+            "全知全能",
+            "无敌",
+            "秒杀",
+            "一击必杀",
+            "时间停止",
+            "操控现实",
+            "瞬移全图",
+            "全图瞬移",
+            "无限学都币",
+            "无限金币",
+            "无限钱",
+        )
+        for pattern in hard_blocks:
+            normalized = re.sub(r"\s+", "", pattern.lower())
+            if normalized in compact:
+                return f"角色卡被反作弊拦截：包含高风险设定“{pattern}”。请降低强度后重新提交。"
+        if re.search(r"(level|lv)\.?\s*[6-9][0-9]*", lowered, re.I):
+            return "角色卡被反作弊拦截：能力等级不能高于 Level 5。"
+        if re.search(r"([6-9][0-9]*)级", compact):
+            return "角色卡被反作弊拦截：能力等级不能高于 Level 5。"
         return ""
 
     def normalize_action(self, text: str) -> str:

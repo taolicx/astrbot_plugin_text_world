@@ -19,8 +19,40 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.3.1"
+PLUGIN_VERSION = "0.3.2"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
+
+COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
+    "help": ("世界帮助", "文游帮助", "世界菜单"),
+    "template": ("角色卡模板", "角色模板", "创建格式"),
+    "open": ("世界开启", "开启世界", "文游开启"),
+    "create": ("创建角色", "角色创建", "创建人物"),
+    "action": ("行动", "文游行动", "提交行动"),
+    "status": ("状态", "我的状态", "状态栏"),
+    "map": ("地图", "世界地图"),
+    "pending": ("待结算", "本轮行动", "行动列表"),
+    "checkin": ("签到", "每日签到"),
+    "manual_settle": ("世界结算", "文游结算", "立即结算"),
+    "manual_event": ("世界事件", "文游事件", "触发事件"),
+    "web": ("世界后台", "文游后台"),
+}
+
+GROUP_TEXT_COMMANDS = {
+    "help",
+    "template",
+    "open",
+    "create",
+    "action",
+    "status",
+    "map",
+    "pending",
+    "checkin",
+    "manual_settle",
+    "manual_event",
+    "web",
+}
+
+PAYLOAD_COMMANDS = {"create", "action", "manual_event"}
 
 
 def help_text() -> str:
@@ -30,12 +62,14 @@ def help_text() -> str:
             "世界开启：在当前群登记世界",
             "角色卡模板：查看完整创建格式",
             "创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级：提交角色卡，需管理员审核",
+            "创建角色 我叫星野遥，是第七学区高中生，能力是微弱电磁感应：也支持自然语言提交",
             "行动 内容：提交本小时行动",
             "状态：查看自己的状态栏",
             "地图：查看当前位置和可前往地点",
             "待结算：查看本轮提交数量",
             "签到：每日获得学都币",
             "绑定文游私聊：私聊 bot 后绑定个人结果和早八状态栏",
+            "世界开启后：群内普通聊天会被静默拦截，只回复文游指令",
             "管理员：世界结算 / 世界事件 / 世界后台",
         ]
     )
@@ -88,97 +122,31 @@ class TextWorldPlugin(Star):
 
     @filter.command("世界开启", alias={"开启世界", "文游开启"})
     async def open_world(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("请在群聊中使用。").stop_event()
-            return
-        self._last_event_by_group[group_id] = event
-        world = await to_thread(self.service.ensure_world, group_id, self._origin(event))
-        yield event.plain_result(
-            f"学院都市文字世界已开启。当前第 {world['current_round']} 轮。\n后台：http://{self.cfg.web_host}:{self.cfg.web_port}"
-        ).stop_event()
+        yield event.plain_result(await self._handle_open_world(event)).stop_event()
 
     @filter.command("创建角色", alias={"角色创建", "创建人物"})
     async def create_character(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("请在群里提交角色卡。").stop_event()
-            return
-        payload = self._command_payload(event, ["创建角色", "角色创建", "创建人物"])
-        parts = [part.strip() for part in payload.replace("｜", "|").split("|", 4)]
-        if len(parts) < 2:
-            yield event.plain_result(CHARACTER_CARD_TEMPLATE).stop_event()
-            return
-        name = parts[0]
-        identity = parts[1]
-        faction = parts[2] if len(parts) >= 3 else ""
-        ability = parts[3] if len(parts) >= 4 else ""
-        power_level = parts[4] if len(parts) >= 5 else "Level 0"
-        ok, msg = await to_thread(
-            self.service.create_character_request,
-            group_id,
-            self._origin(event),
-            self._sender_id(event),
-            name.strip(),
-            identity.strip(),
-            faction=faction.strip(),
-            ability=ability.strip(),
-            power_level=power_level.strip() or "Level 0",
-        )
-        yield event.plain_result(msg).stop_event()
+        yield event.plain_result(await self._handle_create_character(event)).stop_event()
 
     @filter.command("行动", alias={"文游行动", "提交行动"})
     async def submit_action(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("行动需要在群里提交。").stop_event()
-            return
-        self._last_event_by_group[group_id] = event
-        text = self._command_payload(event, ["行动", "文游行动", "提交行动"])
-        ok, msg = await to_thread(
-            self.service.submit_action,
-            group_id,
-            self._origin(event),
-            self._sender_id(event),
-            text,
-        )
-        yield event.plain_result(msg).stop_event()
+        yield event.plain_result(await self._handle_submit_action(event)).stop_event()
 
     @filter.command("状态", alias={"我的状态", "状态栏"})
     async def status(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("请在对应群聊里查看状态。").stop_event()
-            return
-        text = await to_thread(self.service.get_status_by_qq, group_id, self._sender_id(event))
-        yield event.plain_result(text).stop_event()
+        yield event.plain_result(await self._handle_status(event)).stop_event()
 
     @filter.command("地图", alias={"世界地图"})
     async def map_cmd(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("请在群里查看地图。").stop_event()
-            return
-        text = await to_thread(self.service.map_text, group_id, self._sender_id(event))
-        yield event.plain_result(text).stop_event()
+        yield event.plain_result(await self._handle_map(event)).stop_event()
 
     @filter.command("待结算", alias={"本轮行动", "行动列表"})
     async def pending(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("请在群里查看待结算信息。").stop_event()
-            return
-        text = await to_thread(self.service.pending_text, group_id)
-        yield event.plain_result(text).stop_event()
+        yield event.plain_result(await self._handle_pending(event)).stop_event()
 
     @filter.command("签到", alias={"每日签到"})
     async def checkin(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("请在群里签到。").stop_event()
-            return
-        ok, msg = await to_thread(self.service.checkin, group_id, self._sender_id(event))
-        yield event.plain_result(msg).stop_event()
+        yield event.plain_result(await self._handle_checkin(event)).stop_event()
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     @filter.command("绑定文游私聊", alias={"绑定世界私聊", "文游私聊绑定"})
@@ -192,24 +160,12 @@ class TextWorldPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界结算", alias={"文游结算", "立即结算"})
     async def manual_settle(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("请在要结算的群里使用。").stop_event()
-            return
-        self._last_event_by_group[group_id] = event
-        msg = await self._settle_group(group_id, event, force_event=False)
-        yield event.plain_result(msg).stop_event()
+        yield event.plain_result(await self._handle_manual_settle(event)).stop_event()
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界事件", alias={"文游事件", "触发事件"})
     async def manual_event(self, event: AstrMessageEvent):
-        group_id = self._group_id(event)
-        if not group_id:
-            yield event.plain_result("请在要触发事件的群里使用。").stop_event()
-            return
-        self._last_event_by_group[group_id] = event
-        msg = await self._settle_group(group_id, event, force_event=True)
-        yield event.plain_result(msg).stop_event()
+        yield event.plain_result(await self._handle_manual_event(event)).stop_event()
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界后台", alias={"文游后台"})
@@ -217,6 +173,188 @@ class TextWorldPlugin(Star):
         yield event.plain_result(
             f"文游后台：http://{self.cfg.web_host}:{self.cfg.web_port}\n默认管理员账号请看插件配置。"
         ).stop_event()
+
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE, priority=50)
+    async def world_group_listener(self, event: AstrMessageEvent):
+        if not self.cfg.enable_world_chat_silence:
+            return
+        group_id = self._group_id(event)
+        if not group_id:
+            return
+        command = self._parse_text_world_command(event)
+        world_enabled = await to_thread(self.service.world_is_enabled, group_id)
+        if not world_enabled and not command:
+            return
+
+        event.should_call_llm(False)
+        if not command:
+            event.stop_event()
+            return
+
+        msg = await self._handle_group_text_command(event, command["key"])
+        if msg:
+            yield event.plain_result(msg).stop_event()
+        else:
+            event.stop_event()
+
+    async def _handle_group_text_command(self, event: AstrMessageEvent, key: str) -> str:
+        if key == "help":
+            return help_text()
+        if key == "template":
+            return CHARACTER_CARD_TEMPLATE
+        if key == "open":
+            return await self._handle_open_world(event)
+        if key == "create":
+            return await self._handle_create_character(event)
+        if key == "action":
+            return await self._handle_submit_action(event)
+        if key == "status":
+            return await self._handle_status(event)
+        if key == "map":
+            return await self._handle_map(event)
+        if key == "pending":
+            return await self._handle_pending(event)
+        if key == "checkin":
+            return await self._handle_checkin(event)
+        if key == "manual_settle":
+            if not self._is_admin(event):
+                return "权限不足，只有管理员可以手动结算。"
+            return await self._handle_manual_settle(event)
+        if key == "manual_event":
+            if not self._is_admin(event):
+                return "权限不足，只有管理员可以手动触发事件。"
+            return await self._handle_manual_event(event)
+        if key == "web":
+            if not self._is_admin(event):
+                return "权限不足，只有管理员可以查看后台入口。"
+            return f"文游后台：http://{self.cfg.web_host}:{self.cfg.web_port}\n默认管理员账号请看插件配置。"
+        return ""
+
+    async def _handle_open_world(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在群聊中使用。"
+        self._last_event_by_group[group_id] = event
+        world = await to_thread(self.service.ensure_world, group_id, self._origin(event))
+        return f"学院都市文字世界已开启。当前第 {world['current_round']} 轮。\n后台：http://{self.cfg.web_host}:{self.cfg.web_port}"
+
+    async def _handle_create_character(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在群里提交角色卡。"
+        payload = self._command_payload(event, COMMAND_ALIASES["create"])
+        if not payload:
+            return CHARACTER_CARD_TEMPLATE
+        card_cheat = await to_thread(self.service.character_card_cheat_reason, payload)
+        if card_cheat:
+            return card_cheat
+
+        provider_id = await self._provider_id(event)
+        normalized = await self._parse_character_payload(payload, self._sender_id(event), provider_id)
+        ok, msg = await to_thread(
+            self.service.create_character_request,
+            group_id,
+            self._origin(event),
+            self._sender_id(event),
+            normalized["game_name"],
+            normalized["identity"],
+            faction=normalized["faction"],
+            ability=normalized["ability"],
+            power_level=normalized["power_level"],
+        )
+        if normalized.get("_source") == "natural":
+            card_text = "\n".join(
+                [
+                    "已按自然语言整理角色卡：",
+                    f"游戏名：{normalized['game_name']}",
+                    f"身份：{normalized['identity']}",
+                    f"阵营：{normalized['faction']}",
+                    f"能力：{normalized['ability']}",
+                    f"能力等级：{normalized['power_level']}",
+                    msg,
+                ]
+            )
+            return card_text
+        return msg
+
+    async def _parse_character_payload(self, payload: str, sender_id: str, provider_id: str) -> dict[str, str]:
+        parts = [part.strip() for part in payload.replace("｜", "|").split("|", 4)]
+        parts = [part for part in parts if part]
+        if len(parts) >= 2:
+            return {
+                "game_name": parts[0],
+                "identity": parts[1],
+                "faction": parts[2] if len(parts) >= 3 else "",
+                "ability": parts[3] if len(parts) >= 4 else "",
+                "power_level": parts[4] if len(parts) >= 5 else "Level 0",
+                "_source": "structured",
+            }
+        if not self.cfg.enable_natural_character_card:
+            return {
+                "game_name": "",
+                "identity": "",
+                "faction": "",
+                "ability": "",
+                "power_level": "Level 0",
+                "_source": "structured",
+            }
+        normalized = await self.narrator.normalize_character_card(payload, sender_id, provider_id)
+        normalized["_source"] = "natural"
+        return normalized
+
+    async def _handle_submit_action(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "行动需要在群里提交。"
+        self._last_event_by_group[group_id] = event
+        text = self._command_payload(event, COMMAND_ALIASES["action"])
+        ok, msg = await to_thread(
+            self.service.submit_action,
+            group_id,
+            self._origin(event),
+            self._sender_id(event),
+            text,
+        )
+        return msg
+
+    async def _handle_status(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在对应群聊里查看状态。"
+        return await to_thread(self.service.get_status_by_qq, group_id, self._sender_id(event))
+
+    async def _handle_map(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在群里查看地图。"
+        return await to_thread(self.service.map_text, group_id, self._sender_id(event))
+
+    async def _handle_pending(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在群里查看待结算信息。"
+        return await to_thread(self.service.pending_text, group_id)
+
+    async def _handle_checkin(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在群里签到。"
+        ok, msg = await to_thread(self.service.checkin, group_id, self._sender_id(event))
+        return msg
+
+    async def _handle_manual_settle(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在要结算的群里使用。"
+        self._last_event_by_group[group_id] = event
+        return await self._settle_group(group_id, event, force_event=False)
+
+    async def _handle_manual_event(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在要触发事件的群里使用。"
+        self._last_event_by_group[group_id] = event
+        return await self._settle_group(group_id, event, force_event=True)
 
     async def _scheduler_loop(self):
         while True:
@@ -392,7 +530,7 @@ class TextWorldPlugin(Star):
     def _origin(self, event: AstrMessageEvent) -> str:
         return str(getattr(event, "unified_msg_origin", "") or "")
 
-    def _command_payload(self, event: AstrMessageEvent, names: list[str]) -> str:
+    def _command_payload(self, event: AstrMessageEvent, names: list[str] | tuple[str, ...]) -> str:
         text = (getattr(event, "message_str", "") or "").strip()
         for name in names:
             if text == name:
@@ -400,3 +538,48 @@ class TextWorldPlugin(Star):
             if text.startswith(name):
                 return text[len(name):].strip()
         return text
+
+    def _parse_text_world_command(self, event: AstrMessageEvent) -> dict[str, str]:
+        text = (getattr(event, "message_str", "") or "").strip()
+        if not text:
+            return {}
+        text = self._strip_wake_prefixes(text)
+        candidates = [
+            (key, name)
+            for key in GROUP_TEXT_COMMANDS
+            for name in COMMAND_ALIASES[key]
+        ]
+        candidates.sort(key=lambda item: len(item[1]), reverse=True)
+        for key, name in candidates:
+            if text == name:
+                return {"key": key, "name": name, "payload": text[len(name):].strip()}
+            if key in PAYLOAD_COMMANDS and text.startswith(name):
+                return {"key": key, "name": name, "payload": text[len(name):].strip()}
+        return {}
+
+    def _strip_wake_prefixes(self, text: str) -> str:
+        text = str(text or "").strip()
+        try:
+            cfg = self.context.get_config()
+            prefixes = cfg.get("wake_prefix", []) if isinstance(cfg, dict) else []
+        except Exception:
+            prefixes = []
+        for prefix in prefixes or []:
+            prefix = str(prefix or "").strip()
+            if prefix and text.startswith(prefix):
+                return text[len(prefix):].strip()
+        return text
+
+    def _is_admin(self, event: AstrMessageEvent) -> bool:
+        try:
+            if event.is_admin():
+                return True
+        except Exception:
+            pass
+        try:
+            cfg = self.context.get_config(umo=event.unified_msg_origin)
+            admins = cfg.get("admins_id", []) if isinstance(cfg, dict) else []
+        except Exception:
+            admins = []
+        sender_id = self._sender_id(event)
+        return any(str(item) == sender_id for item in admins)

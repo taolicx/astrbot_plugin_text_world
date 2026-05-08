@@ -64,6 +64,16 @@
     "type": "bool",
     "default": true
   },
+  "enable_world_chat_silence": {
+    "description": "世界开启后是否静默拦截群内普通聊天，避免 AstrBot 正常聊天模型继续输出；文游指令仍会回复",
+    "type": "bool",
+    "default": true
+  },
+  "enable_natural_character_card": {
+    "description": "是否允许 创建角色 后接自然语言描述，并优先使用快速模型整理为标准角色卡；失败时使用程序兜底",
+    "type": "bool",
+    "default": true
+  },
   "default_provider_id": {
     "description": "兼容旧配置的默认 LLM 提供商；未设置专用模型时会回退到这里",
     "type": "string",

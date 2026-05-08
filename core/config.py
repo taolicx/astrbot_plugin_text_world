@@ -38,6 +38,8 @@ class TextWorldConfig:
         self.fast_provider_id = str(raw.get("fast_provider_id", "") or "").strip()
         self.enable_llm = self._bool(raw, "enable_llm", True)
         self.enable_ai_private_result = self._bool(raw, "enable_ai_private_result", True)
+        self.enable_world_chat_silence = self._bool(raw, "enable_world_chat_silence", True)
+        self.enable_natural_character_card = self._bool(raw, "enable_natural_character_card", True)
         self.enable_onebot_private_fallback = self._bool(raw, "enable_onebot_private_fallback", True)
         self.public_history_limit = max(10, self._int(raw, "public_history_limit", 50))
         self.private_history_limit = max(

@@ -5,8 +5,9 @@
 ## 已实现的 v1/MVP 功能
 
 - 群内开启世界
-- 玩家提交角色卡
+- 玩家提交角色卡，支持标准格式和自然语言描述
 - 角色卡完整格式：身份、阵营、能力、能力等级
+- 世界开启后静默拦截群内普通聊天，避免 AstrBot 正常聊天模型抢答；只回复文游指令
 - 管理员前端审核/编辑角色卡并绑定 QQ 号
 - 每小时提交一次行动
 - 每小时统一结算
@@ -36,6 +37,7 @@
 世界开启
 角色卡模板
 创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级
+创建角色 我叫星野遥，是第七学区高中生兼风纪委员见习，能力是微弱电磁感应，Level 2
 行动 下一步要做什么
 状态
 地图
@@ -103,7 +105,7 @@ data/plugin_data/astrbot_plugin_text_world/text_world.sqlite3
 ## 推荐使用流程
 
 1. 群里发送 `世界开启`。
-2. 玩家先发送 `角色卡模板`，再按 `创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级` 提交。
+2. 玩家先发送 `角色卡模板`，再按 `创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级` 提交；也可以在 `创建角色` 后直接写自然语言描述，插件会优先用快速模型整理成标准角色卡。
 3. 管理员打开前端后台审核角色卡，补充阵营、能力、战斗力与位置。
 4. 玩家私聊 bot 发送 `绑定文游私聊`。
 5. 玩家每小时在群里发送 `行动 内容`。
@@ -131,10 +133,10 @@ data/plugin_data/astrbot_plugin_text_world/text_world.sqlite3
 
 - `main_provider_id`：主模型，适合填 Claude 4.6o 一类综合能力强的模型。
 - `story_provider_id`：剧情模型，当前每小时结算润色会优先走这里，适合填 DeepSeek v4 Pro。
-- `fast_provider_id`：快速模型，预留给后续反作弊、摘要、轻量判定等任务，适合填 v4 Flash。
+- `fast_provider_id`：快速模型，用于自然语言角色卡整理，并预留给后续反作弊、摘要、轻量判定等任务，适合填 v4 Flash。
 - `default_provider_id`：旧版兼容默认 provider，未配置专用模型时作为回退。
 
-当前实际会产生大模型调用的是“每轮结算剧情润色”，调用顺序是：`story_provider_id` -> `main_provider_id` -> 当前群会话 provider -> `default_provider_id`。快速模型配置先保留为扩展入口，不会额外增加调用。
+当前实际会产生大模型调用的是“每轮结算剧情润色”和“自然语言角色卡整理”。结算润色调用顺序是：`story_provider_id` -> `main_provider_id` -> 当前群会话 provider -> `default_provider_id`。自然语言角色卡整理调用顺序是：`fast_provider_id` -> `main_provider_id` -> 当前群会话 provider -> `default_provider_id`；API 失败会自动使用程序解析兜底。
 
 ## 大模型消耗说明
 
