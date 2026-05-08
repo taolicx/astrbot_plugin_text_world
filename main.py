@@ -19,6 +19,7 @@ from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
 PLUGIN_VERSION = "0.3.0"
+PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 
 def help_text() -> str:
@@ -43,6 +44,7 @@ def help_text() -> str:
     "codex",
     "学院都市小时制群文游系统：群行动、统一结算、私聊结果、前端后台、角色审核、事件预设、背包商店。",
     PLUGIN_VERSION,
+    PLUGIN_REPO,
 )
 class TextWorldPlugin(Star):
     def __init__(self, context: Context, config: Any):
