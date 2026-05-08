@@ -19,7 +19,7 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.3.2"
+PLUGIN_VERSION = "0.3.3"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
@@ -230,6 +230,36 @@ class TextWorldPlugin(Star):
             return f"文游后台：http://{self.cfg.web_host}:{self.cfg.web_port}\n默认管理员账号请看插件配置。"
         return ""
 
+    async def _bound_group_id_for_private(self, event: AstrMessageEvent) -> str:
+        if not self._is_private_chat(event):
+            return ""
+        binding = await to_thread(
+            self.service.private_world_for_qq,
+            self._sender_id(event),
+            self._origin(event),
+        )
+        if not binding:
+            return ""
+        if binding.get("ambiguous"):
+            return "__ambiguous__"
+        return str(binding.get("group_id") or "")
+
+    async def _command_group_id(
+        self,
+        event: AstrMessageEvent,
+        *,
+        allow_private_binding: bool = False,
+    ) -> str:
+        group_id = self._group_id(event)
+        if group_id:
+            return group_id
+        if allow_private_binding:
+            return await self._bound_group_id_for_private(event)
+        return ""
+
+    def _private_binding_hint(self) -> str:
+        return "请先在私聊发送：绑定文游私聊。若你在多个群都有角色，请到对应群内使用该指令。"
+
     async def _handle_open_world(self, event: AstrMessageEvent) -> str:
         group_id = self._group_id(event)
         if not group_id:
@@ -318,27 +348,35 @@ class TextWorldPlugin(Star):
         return msg
 
     async def _handle_status(self, event: AstrMessageEvent) -> str:
-        group_id = self._group_id(event)
+        group_id = await self._command_group_id(event, allow_private_binding=True)
+        if group_id == "__ambiguous__":
+            return "检测到你在多个群世界都有角色，私聊里无法判断要查看哪一个。" + self._private_binding_hint()
         if not group_id:
-            return "请在对应群聊里查看状态。"
+            return "没有找到已绑定的群世界。" + self._private_binding_hint()
         return await to_thread(self.service.get_status_by_qq, group_id, self._sender_id(event))
 
     async def _handle_map(self, event: AstrMessageEvent) -> str:
-        group_id = self._group_id(event)
+        group_id = await self._command_group_id(event, allow_private_binding=True)
+        if group_id == "__ambiguous__":
+            return "检测到你在多个群世界都有角色，私聊里无法判断要查看哪一个。" + self._private_binding_hint()
         if not group_id:
-            return "请在群里查看地图。"
+            return "没有找到已绑定的群世界。" + self._private_binding_hint()
         return await to_thread(self.service.map_text, group_id, self._sender_id(event))
 
     async def _handle_pending(self, event: AstrMessageEvent) -> str:
-        group_id = self._group_id(event)
+        group_id = await self._command_group_id(event, allow_private_binding=True)
+        if group_id == "__ambiguous__":
+            return "检测到你在多个群世界都有角色，私聊里无法判断要查看哪一个。" + self._private_binding_hint()
         if not group_id:
-            return "请在群里查看待结算信息。"
+            return "没有找到已绑定的群世界。" + self._private_binding_hint()
         return await to_thread(self.service.pending_text, group_id)
 
     async def _handle_checkin(self, event: AstrMessageEvent) -> str:
-        group_id = self._group_id(event)
+        group_id = await self._command_group_id(event, allow_private_binding=True)
+        if group_id == "__ambiguous__":
+            return "检测到你在多个群世界都有角色，私聊里无法判断要签到哪一个。" + self._private_binding_hint()
         if not group_id:
-            return "请在群里签到。"
+            return "没有找到已绑定的群世界。" + self._private_binding_hint()
         ok, msg = await to_thread(self.service.checkin, group_id, self._sender_id(event))
         return msg
 
@@ -499,6 +537,8 @@ class TextWorldPlugin(Star):
         return self.cfg.provider_for("main")
 
     def _group_id(self, event: AstrMessageEvent) -> str:
+        if self._is_private_chat(event):
+            return ""
         try:
             value = event.get_group_id()
             if value:
@@ -511,6 +551,17 @@ class TextWorldPlugin(Star):
             if value:
                 return str(value)
         return ""
+
+    def _is_private_chat(self, event: AstrMessageEvent) -> bool:
+        try:
+            if event.is_private_chat():
+                return True
+        except Exception:
+            pass
+        message_obj = getattr(event, "message_obj", None)
+        message_type = getattr(message_obj, "type", None)
+        value = getattr(message_type, "value", message_type)
+        return str(value or "").lower() in {"friendmessage", "private", "private_message", "friend_message"}
 
     def _sender_id(self, event: AstrMessageEvent) -> str:
         try:

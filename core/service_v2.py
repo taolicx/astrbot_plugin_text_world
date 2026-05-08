@@ -352,6 +352,56 @@ class TextWorldService:
 
         return self.db.run(work)
 
+    def private_world_for_qq(self, qq_id: str, private_origin: str = "") -> dict[str, Any] | None:
+        qq_id = str(qq_id or "").strip()
+        private_origin = str(private_origin or "").strip()
+        if not qq_id:
+            return None
+
+        def work(con: sqlite3.Connection) -> dict[str, Any] | None:
+            base_sql = """
+                SELECT
+                  characters.group_id,
+                  characters.game_name,
+                  characters.audit_status,
+                  characters.private_origin,
+                  worlds.enabled,
+                  worlds.updated_at
+                FROM characters
+                JOIN worlds ON worlds.group_id=characters.group_id
+                WHERE characters.qq_id=?
+                  AND worlds.enabled=1
+                  {extra_where}
+                ORDER BY
+                  CASE WHEN characters.private_origin<>'' THEN 0 ELSE 1 END,
+                  worlds.updated_at DESC,
+                  characters.updated_at DESC,
+                  characters.id DESC
+                LIMIT 2
+            """
+            rows: list[sqlite3.Row] = []
+            if private_origin:
+                rows = con.execute(
+                    base_sql.format(extra_where="AND characters.private_origin=?"),
+                    (qq_id, private_origin),
+                ).fetchall()
+                if len(rows) == 1:
+                    return dict(rows[0])
+                if len(rows) > 1:
+                    return {"ambiguous": True}
+
+            rows = con.execute(
+                base_sql.format(extra_where="AND characters.private_origin=''"),
+                (qq_id,),
+            ).fetchall()
+            if not rows:
+                return None
+            if len(rows) > 1:
+                return {"ambiguous": True}
+            return dict(rows[0])
+
+        return self.db.run(work)
+
     def get_status_by_qq(self, group_id: str, qq_id: str) -> str:
         def work(con: sqlite3.Connection) -> str:
             char = con.execute(
