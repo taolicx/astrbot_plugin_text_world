@@ -1,0 +1,114 @@
+{
+  "cycle_minutes": {
+    "description": "玩家行动统一结算周期，默认 60 分钟",
+    "type": "int",
+    "default": 60,
+    "slider": {
+      "min": 5,
+      "max": 240,
+      "step": 5
+    }
+  },
+  "event_cycle_minutes": {
+    "description": "公共事件周期，默认 120 分钟",
+    "type": "int",
+    "default": 120,
+    "slider": {
+      "min": 10,
+      "max": 480,
+      "step": 10
+    }
+  },
+  "daily_status_hour": {
+    "description": "每日私聊状态栏发送小时，北京时间，默认 8 点",
+    "type": "int",
+    "default": 8,
+    "slider": {
+      "min": 0,
+      "max": 23,
+      "step": 1
+    }
+  },
+  "scheduler_poll_seconds": {
+    "description": "后台检查结算/早安状态推送的间隔秒数",
+    "type": "int",
+    "default": 30
+  },
+  "max_action_length": {
+    "description": "每次行动最大字数",
+    "type": "int",
+    "default": 120,
+    "slider": {
+      "min": 40,
+      "max": 500,
+      "step": 10
+    }
+  },
+  "start_money": {
+    "description": "新角色初始学都币",
+    "type": "int",
+    "default": 100
+  },
+  "checkin_reward": {
+    "description": "每日签到奖励学都币",
+    "type": "int",
+    "default": 20
+  },
+  "enable_llm": {
+    "description": "是否启用大模型一次性生成群公告和私聊结果；关闭后使用程序模板",
+    "type": "bool",
+    "default": true
+  },
+  "enable_ai_private_result": {
+    "description": "是否允许大模型润色玩家私聊结果；关闭后私聊使用程序权威模板，仅群公告走大模型",
+    "type": "bool",
+    "default": true
+  },
+  "default_provider_id": {
+    "description": "默认 LLM 提供商，后台定时结算没有群会话上下文时会使用它",
+    "type": "string",
+    "_special": "select_provider",
+    "default": ""
+  },
+  "world_theme": {
+    "description": "世界主题说明，会传给大模型作为背景",
+    "type": "text",
+    "default": "学院都市，轻剧情、日常探索、偶遇、阵营、传闻和小事件并重。"
+  },
+  "narrator_prompt": {
+    "description": "自定义旁白提示词，留空使用默认文游主持风格",
+    "type": "text",
+    "default": ""
+  },
+  "enable_onebot_private_fallback": {
+    "description": "玩家未绑定私聊时，是否在 OneBot/AIOCQHTTP 平台尝试 QQ 私聊兜底",
+    "type": "bool",
+    "default": true
+  },
+  "web_enabled": {
+    "description": "是否启用内置前端后台",
+    "type": "bool",
+    "default": true
+  },
+  "web_host": {
+    "description": "内置前端监听地址，服务器部署通常填 0.0.0.0，本机调试填 127.0.0.1",
+    "type": "string",
+    "default": "127.0.0.1"
+  },
+  "web_port": {
+    "description": "内置前端端口",
+    "type": "int",
+    "default": 8787
+  },
+  "admin_username": {
+    "description": "默认管理员账号，首次初始化数据库时创建",
+    "type": "string",
+    "default": "admin"
+  },
+  "admin_password": {
+    "description": "默认管理员密码，首次初始化数据库时创建；上线前务必修改",
+    "type": "string",
+    "default": "admin123456",
+    "is_sensitive": true
+  }
+}
