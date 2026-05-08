@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-from .defaults import DEFAULT_LOCATIONS, DEFAULT_NPCS
+from .defaults import DEFAULT_EVENT_PRESETS, DEFAULT_LOCATIONS, DEFAULT_NPCS, DEFAULT_SHOP_ITEMS
 
 T = TypeVar("T")
 CN_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
@@ -162,7 +162,7 @@ class TextWorldDB:
               identity TEXT NOT NULL DEFAULT '',
               faction TEXT NOT NULL DEFAULT '',
               ability TEXT NOT NULL DEFAULT '',
-              power_level TEXT NOT NULL DEFAULT 'D',
+              power_level TEXT NOT NULL DEFAULT 'Level 0',
               audit_status TEXT NOT NULL DEFAULT 'pending',
               location_key TEXT NOT NULL DEFAULT 'school_gate',
               hp INTEGER NOT NULL DEFAULT 100,
@@ -299,7 +299,7 @@ class TextWorldDB:
                 "display_name": "TEXT NOT NULL DEFAULT ''",
                 "faction": "TEXT NOT NULL DEFAULT ''",
                 "ability": "TEXT NOT NULL DEFAULT ''",
-                "power_level": "TEXT NOT NULL DEFAULT 'D'",
+                "power_level": "TEXT NOT NULL DEFAULT 'Level 0'",
                 "audit_status": "TEXT NOT NULL DEFAULT 'pending'",
                 "location_key": "TEXT NOT NULL DEFAULT 'school_gate'",
                 "hp": "INTEGER NOT NULL DEFAULT 100",
@@ -528,17 +528,18 @@ class TextWorldDB:
                         now,
                     ),
                 )
-                self._seed_defaults(con, group_id)
             elif group_origin and not row["group_origin"]:
                 con.execute(
                     "UPDATE worlds SET group_origin=?, updated_at=? WHERE group_id=?",
                     (group_origin, now, group_id),
                 )
+            self._seed_defaults(con, group_id)
             return row_to_dict(con.execute("SELECT * FROM worlds WHERE group_id=?", (group_id,)).fetchone()) or {}
 
         return self.run(work)
 
     def _seed_defaults(self, con: sqlite3.Connection, group_id: str) -> None:
+        now = utc_now_iso()
         for index, (key, location) in enumerate(DEFAULT_LOCATIONS.items()):
             con.execute(
                 """
@@ -554,6 +555,33 @@ class TextWorldDB:
                     index,
                 ),
             )
+            con.execute(
+                """
+                UPDATE locations
+                SET name=?,description=?,tags=?,sort_order=?
+                WHERE group_id=? AND location_key=?
+                """,
+                (
+                    location.name,
+                    location.description,
+                    json.dumps(location.tags, ensure_ascii=False),
+                    index,
+                    group_id,
+                    key,
+                ),
+            )
+        default_keys = tuple(DEFAULT_LOCATIONS.keys())
+        placeholders = ",".join("?" for _ in default_keys)
+        con.execute(
+            f"""
+            DELETE FROM location_edges
+            WHERE group_id=?
+              AND from_location_key IN ({placeholders})
+              AND to_location_key IN ({placeholders})
+            """,
+            (group_id, *default_keys, *default_keys),
+        )
+        for key, location in DEFAULT_LOCATIONS.items():
             for neighbor in location.neighbors:
                 con.execute(
                     "INSERT OR IGNORE INTO location_edges(group_id,from_location_key,to_location_key) VALUES(?,?,?)",
@@ -562,24 +590,79 @@ class TextWorldDB:
         for key, npc in DEFAULT_NPCS.items():
             con.execute(
                 """
-                INSERT OR IGNORE INTO npcs(group_id,npc_key,name,role,location_key,disposition,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?)
+                INSERT OR IGNORE INTO npcs(group_id,npc_key,name,role,faction,location_key,disposition,memory,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
                 """,
-                (group_id, key, npc.name, npc.role, npc.location_id, npc.disposition, utc_now_iso(), utc_now_iso()),
+                (
+                    group_id,
+                    key,
+                    npc.name,
+                    npc.role,
+                    npc.faction,
+                    npc.location_id,
+                    npc.disposition,
+                    npc.memory,
+                    now,
+                    now,
+                ),
             )
-        defaults = [
-            ("矿泉水", "补充水分的普通瓶装水。", 5, {"water": 20}),
-            ("面包", "简单管饱的面包。", 8, {"satiety": 20}),
-            ("便携绷带", "处理轻伤的基础医疗用品。", 20, {"hp": 10}),
-            ("能量饮料", "短时间补充精力，略微影响心情。", 18, {"energy": 15, "mood": -1}),
-        ]
-        for name, desc, price, effect in defaults:
+            con.execute(
+                """
+                UPDATE npcs
+                SET name=?,role=?,faction=?,disposition=?,memory=?,updated_at=?
+                WHERE group_id=? AND npc_key=?
+                """,
+                (
+                    npc.name,
+                    npc.role,
+                    npc.faction,
+                    npc.disposition,
+                    npc.memory,
+                    now,
+                    group_id,
+                    key,
+                ),
+            )
+        for item in DEFAULT_SHOP_ITEMS:
             con.execute(
                 """
                 INSERT OR IGNORE INTO shop_items(group_id,name,description,price,stock,effect_json,is_active,created_at,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?)
                 """,
-                (group_id, name, desc, price, -1, json.dumps(effect, ensure_ascii=False), 1, utc_now_iso(), utc_now_iso()),
+                (
+                    group_id,
+                    item.name,
+                    item.description,
+                    item.price,
+                    item.stock,
+                    json.dumps(item.effect, ensure_ascii=False),
+                    1,
+                    now,
+                    now,
+                ),
+            )
+        for event in DEFAULT_EVENT_PRESETS:
+            exists = con.execute(
+                "SELECT 1 FROM event_presets WHERE group_id=? AND title=? LIMIT 1",
+                (group_id, event.title),
+            ).fetchone()
+            if exists:
+                continue
+            con.execute(
+                """
+                INSERT INTO event_presets(group_id,title,description,effect_json,is_public,trigger_next,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?)
+                """,
+                (
+                    group_id,
+                    event.title,
+                    event.description,
+                    json.dumps(event.effect, ensure_ascii=False),
+                    1,
+                    0,
+                    now,
+                    now,
+                ),
             )
 
     def scalar(self, sql: str, params: tuple[Any, ...] = ()) -> Any:

@@ -60,7 +60,7 @@ class TextWorldService:
         *,
         faction: str = "",
         ability: str = "",
-        power_level: str = "D",
+        power_level: str = "Level 0",
         approve: bool = False,
     ) -> tuple[bool, str]:
         qq_id = str(qq_id or "").strip()
@@ -71,9 +71,9 @@ class TextWorldService:
         identity = self.clean_text(identity, 240)
         faction = self.clean_text(faction, 80)
         ability = self.clean_text(ability, 240)
-        power_level = self.clean_text(power_level, 20) or "D"
+        power_level = self.clean_text(power_level, 20) or "Level 0"
         if not game_name or not identity:
-            return False, "格式：创建角色 游戏名 | 身份设定"
+            return False, "格式：创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级"
         now = utc_now_iso()
         status = "approved" if approve else "pending"
 
@@ -175,7 +175,7 @@ class TextWorldService:
                 (group_id, qq_id),
             ).fetchone()
             if not character:
-                return False, "你还没有角色卡。请先发送：创建角色 游戏名 | 身份设定"
+                return False, "你还没有角色卡。请先发送：角色卡模板，然后按格式提交。"
             if character["audit_status"] != "approved":
                 return False, "你的角色卡还没有通过审核，暂时不能行动。"
             if int(character["hp"]) <= 0 and not (self._looks_like_heal(text) or self._looks_like_rest(text)):
@@ -418,6 +418,8 @@ class TextWorldService:
                 history = [dict(row) for row in con.execute("SELECT * FROM history ORDER BY id DESC LIMIT 100").fetchall()]
                 shop = [dict(row) for row in con.execute("SELECT * FROM shop_items ORDER BY group_id,name LIMIT 200").fetchall()]
                 npcs = [dict(row) for row in con.execute("SELECT * FROM npcs ORDER BY group_id,name LIMIT 200").fetchall()]
+                locations = [dict(row) for row in con.execute("SELECT * FROM locations ORDER BY group_id,sort_order,id LIMIT 500").fetchall()]
+                edges = [dict(row) for row in con.execute("SELECT * FROM location_edges ORDER BY group_id,from_location_key,to_location_key LIMIT 2000").fetchall()]
             else:
                 characters = [dict(row) for row in con.execute(
                     "SELECT characters.* FROM characters JOIN users ON users.id=characters.user_id WHERE users.username=?",
@@ -454,11 +456,27 @@ class TextWorldService:
                         tuple(world_ids),
                     ).fetchall()]
                     npcs = [dict(row) for row in con.execute(f"SELECT npc_key,group_id,name,role,faction,location_key,disposition FROM npcs WHERE group_id IN ({placeholders}) ORDER BY group_id,name LIMIT 200", tuple(world_ids)).fetchall()]
+                    locations = [
+                        dict(row)
+                        for row in con.execute(
+                            f"SELECT * FROM locations WHERE group_id IN ({placeholders}) ORDER BY group_id,sort_order,id LIMIT 500",
+                            tuple(world_ids),
+                        ).fetchall()
+                    ]
+                    edges = [
+                        dict(row)
+                        for row in con.execute(
+                            f"SELECT * FROM location_edges WHERE group_id IN ({placeholders}) ORDER BY group_id,from_location_key,to_location_key LIMIT 2000",
+                            tuple(world_ids),
+                        ).fetchall()
+                    ]
                 else:
                     events = []
                     history = []
                     shop = []
                     npcs = []
+                    locations = []
+                    edges = []
             return {
                 "user": {"username": username, "role": role},
                 "worlds": worlds,
@@ -467,6 +485,8 @@ class TextWorldService:
                 "history": history,
                 "shop": shop,
                 "npcs": npcs,
+                "locations": locations,
+                "edges": edges,
                 "worldbook": self.config.worldbook_info(preview_chars=2400 if role == "admin" else 800),
                 "providers": self.config.provider_info(),
             }
@@ -506,7 +526,7 @@ class TextWorldService:
                 "identity": self.clean_text(str(payload.get("identity") if payload.get("identity") is not None else (row["identity"] if row else "")), 240),
                 "faction": self.clean_text(str(payload.get("faction") if payload.get("faction") is not None else (row["faction"] if row else "")), 80),
                 "ability": self.clean_text(str(payload.get("ability") if payload.get("ability") is not None else (row["ability"] if row else "")), 240),
-                "power_level": self.clean_text(str(payload.get("power_level") if payload.get("power_level") is not None else (row["power_level"] if row else "D")), 20) or "D",
+                "power_level": self.clean_text(str(payload.get("power_level") if payload.get("power_level") is not None else (row["power_level"] if row else "Level 0")), 20) or "Level 0",
                 "audit_status": audit_status,
                 "location_key": location_key,
                 "hp": clamp(int_value(payload.get("hp"), int(row["hp"]) if row else 100)),
@@ -1061,7 +1081,8 @@ class TextWorldService:
     def cheat_reason(self, text: str) -> str:
         compact = re.sub(r"\s+", "", text.lower())
         for pattern in CHEAT_PATTERNS:
-            if pattern.lower() in compact:
+            normalized_pattern = re.sub(r"\s+", "", pattern.lower())
+            if normalized_pattern in compact:
                 return f"行动被反作弊拦截：包含高风险词“{pattern}”。"
         if re.search(r"(给我|获得|增加).{0,8}([0-9]{4,}|无限).{0,8}(学都币|金币|钱)", text):
             return "行动被反作弊拦截：不能直接刷取大量货币。"

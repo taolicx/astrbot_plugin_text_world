@@ -13,12 +13,13 @@ from astrbot.core.message.message_event_result import MessageChain
 from .core.compat import to_thread
 from .core.config import TextWorldConfig
 from .core.database import TextWorldDB
+from .core.defaults import CHARACTER_CARD_TEMPLATE
 from .core.narrator_v2 import BatchNarrator
 from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.3.0"
+PLUGIN_VERSION = "0.3.1"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 
@@ -27,7 +28,8 @@ def help_text() -> str:
         [
             "【学院都市文游】",
             "世界开启：在当前群登记世界",
-            "创建角色 游戏名 | 身份设定：提交角色卡，需管理员审核",
+            "角色卡模板：查看完整创建格式",
+            "创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级：提交角色卡，需管理员审核",
             "行动 内容：提交本小时行动",
             "状态：查看自己的状态栏",
             "地图：查看当前位置和可前往地点",
@@ -80,6 +82,10 @@ class TextWorldPlugin(Star):
     async def world_help(self, event: AstrMessageEvent):
         yield event.plain_result(help_text()).stop_event()
 
+    @filter.command("角色卡模板", alias={"角色模板", "创建格式"})
+    async def character_template(self, event: AstrMessageEvent):
+        yield event.plain_result(CHARACTER_CARD_TEMPLATE).stop_event()
+
     @filter.command("世界开启", alias={"开启世界", "文游开启"})
     async def open_world(self, event: AstrMessageEvent):
         group_id = self._group_id(event)
@@ -99,9 +105,15 @@ class TextWorldPlugin(Star):
             yield event.plain_result("请在群里提交角色卡。").stop_event()
             return
         payload = self._command_payload(event, ["创建角色", "角色创建", "创建人物"])
-        name, sep, identity = payload.partition("|")
-        if not sep:
-            name, sep, identity = payload.partition("｜")
+        parts = [part.strip() for part in payload.replace("｜", "|").split("|", 4)]
+        if len(parts) < 2:
+            yield event.plain_result(CHARACTER_CARD_TEMPLATE).stop_event()
+            return
+        name = parts[0]
+        identity = parts[1]
+        faction = parts[2] if len(parts) >= 3 else ""
+        ability = parts[3] if len(parts) >= 4 else ""
+        power_level = parts[4] if len(parts) >= 5 else "Level 0"
         ok, msg = await to_thread(
             self.service.create_character_request,
             group_id,
@@ -109,6 +121,9 @@ class TextWorldPlugin(Star):
             self._sender_id(event),
             name.strip(),
             identity.strip(),
+            faction=faction.strip(),
+            ability=ability.strip(),
+            power_level=power_level.strip() or "Level 0",
         )
         yield event.plain_result(msg).stop_event()
 

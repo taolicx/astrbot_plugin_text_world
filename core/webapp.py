@@ -344,6 +344,7 @@ HTML = r"""<!doctype html>
           <button class="tab" type="button" data-tab="characters">角色 <span id="countCharacters" class="count"></span></button>
           <button class="tab adminOnly" type="button" data-tab="events">事件 <span id="countEvents" class="count"></span></button>
           <button class="tab" type="button" data-tab="shop">商店 <span id="countShop" class="count"></span></button>
+          <button class="tab" type="button" data-tab="map">地图 <span id="countMap" class="count"></span></button>
           <button class="tab" type="button" data-tab="npcs">NPC <span id="countNpcs" class="count"></span></button>
           <button class="tab" type="button" data-tab="history">历史 <span id="countHistory" class="count"></span></button>
           <button class="tab" type="button" data-tab="worldbook">世界书 <span id="countWorldbook" class="count"></span></button>
@@ -388,7 +389,7 @@ HTML = r"""<!doctype html>
                 <div><label for="charPassword">初始 / 重置密码</label><input id="charPassword" type="password" /></div>
                 <div><label for="charAudit">审核状态</label><select id="charAudit"><option value="approved">已通过</option><option value="pending">待审核</option><option value="rejected">已拒绝</option></select></div>
                 <div><label for="charLoc">位置 key</label><input id="charLoc" value="school_gate" /></div>
-                <div><label for="charPower">战斗力 / 能力等级</label><input id="charPower" value="D" /></div>
+                <div><label for="charPower">战斗力 / 能力等级</label><input id="charPower" value="Level 0" /></div>
                 <div><label for="charFaction">阵营</label><input id="charFaction" /></div>
                 <div class="wide"><label for="charIdentity">身份设定</label><textarea id="charIdentity"></textarea></div>
                 <div class="wide"><label for="charAbility">能力设定</label><textarea id="charAbility"></textarea></div>
@@ -465,6 +466,16 @@ HTML = r"""<!doctype html>
               </div>
             </div>
             <div id="npcs" class="grid"></div>
+          </section>
+
+          <section id="tab-map" class="section page hidden">
+            <div class="section-head">
+              <div>
+                <h2>地图路线</h2>
+                <div class="muted" id="mapSub"></div>
+              </div>
+            </div>
+            <div id="mapLocations" class="grid"></div>
           </section>
 
           <section id="tab-history" class="section page hidden">
@@ -637,6 +648,7 @@ function groups(){
   for(const e of state.events || []) values.add(String(e.group_id || ""));
   for(const s of state.shop || []) values.add(String(s.group_id || ""));
   for(const n of state.npcs || []) values.add(String(n.group_id || ""));
+  for(const l of state.locations || []) values.add(String(l.group_id || ""));
   return Array.from(values).filter(Boolean).sort();
 }
 
@@ -680,6 +692,7 @@ function render(){
   renderCharacters();
   renderEvents();
   renderShop();
+  renderMap();
   renderNpcs();
   renderHistory();
   renderWorldbook();
@@ -698,6 +711,7 @@ function renderTabs(){
   $("countCharacters").textContent = String((state.characters || []).length);
   $("countEvents").textContent = String((state.events || []).filter(e => Number(e.trigger_next) === 1).length);
   $("countShop").textContent = String((state.shop || []).length);
+  $("countMap").textContent = String((state.locations || []).length);
   $("countNpcs").textContent = String((state.npcs || []).length);
   $("countHistory").textContent = String((state.history || []).length);
   $("countWorldbook").textContent = state.worldbook && state.worldbook.exists ? "已接入" : "未找到";
@@ -710,6 +724,7 @@ function renderOverview(){
   const shop = filtered(state.shop, ["group_id","name","description"]);
   const history = filtered(state.history, ["group_id","kind","text"]);
   const npcs = filtered(state.npcs, ["group_id","name","role","faction"]);
+  const locations = filtered(state.locations, ["group_id","location_key","name","description","tags"]);
   const pending = chars.filter(c => c.audit_status === "pending").length;
   const queued = events.filter(e => Number(e.trigger_next) === 1).length;
   const activeItems = shop.filter(s => Number(s.is_active) !== 0).length;
@@ -720,7 +735,7 @@ function renderOverview(){
     metric("待审核", pending),
     metric("下轮事件", queued),
     metric("商品", activeItems),
-    metric("历史", history.length)
+    metric("地点", locations.length)
   ].join("");
   $("worlds").innerHTML = worlds.length ? worlds.map(worldCard).join("") : empty("暂无世界");
 }
@@ -759,7 +774,7 @@ function characterCard(c){
       <span>身份</span><span>${esc(c.identity || "-")}</span>
       <span>阵营</span><span>${esc(c.faction || "-")}</span>
       <span>能力</span><span>${esc(c.ability || "-")}</span>
-      <span>战斗力</span><span>${esc(c.power_level || "D")}</span>
+      <span>战斗力</span><span>${esc(c.power_level || "Level 0")}</span>
       <span>位置</span><span>${esc(c.location_key || "-")}</span>
       <span>货币</span><span>${esc(c.money)} 学都币</span>
     </div>
@@ -794,7 +809,7 @@ function fillCharacter(id){
   $("charPassword").value = "";
   $("charAudit").value = c.audit_status || "pending";
   $("charLoc").value = c.location_key || "school_gate";
-  $("charPower").value = c.power_level || "D";
+  $("charPower").value = c.power_level || "Level 0";
   $("charFaction").value = c.faction || "";
   $("charIdentity").value = c.identity || "";
   $("charAbility").value = c.ability || "";
@@ -815,7 +830,7 @@ function clearCharacterForm(){
   }
   $("charAudit").value = "approved";
   $("charLoc").value = "school_gate";
-  $("charPower").value = "D";
+  $("charPower").value = "Level 0";
   $("charHp").value = 100;
   $("charEnergy").value = 100;
   $("charWater").value = 80;
@@ -963,6 +978,42 @@ function renderNpcs(){
   const npcs = filtered(state.npcs, ["group_id","npc_key","name","role","faction","location_key","disposition"]);
   $("npcSub").textContent = `当前可见 ${npcs.length} 个 NPC`;
   $("npcs").innerHTML = npcs.length ? npcs.map(npcCard).join("") : empty("暂无 NPC");
+}
+
+function renderMap(){
+  const locations = filtered(state.locations, ["group_id","location_key","name","description","tags"]);
+  $("mapSub").textContent = `当前可见 ${locations.length} 个地点，按路线约束角色移动`;
+  $("mapLocations").innerHTML = locations.length ? locations.map(locationCard).join("") : empty("暂无地图地点");
+}
+
+function locationCard(loc){
+  const tags = parseTags(loc.tags);
+  const exits = (state.edges || [])
+    .filter(edge => String(edge.group_id || "") === String(loc.group_id || "") && edge.from_location_key === loc.location_key)
+    .map(edge => locationName(loc.group_id, edge.to_location_key));
+  return `<article class="item">
+    <div class="item-title"><b>${esc(loc.name || loc.location_key)}</b>${badge(loc.location_key || "-", "blue")}</div>
+    <div class="kv">
+      <span>群号</span><span>${esc(loc.group_id)}</span>
+      <span>标签</span><span>${esc(tags.length ? tags.join("、") : "-")}</span>
+      <span>描述</span><span>${esc(loc.description || "-")}</span>
+      <span>可前往</span><span>${esc(exits.length ? exits.join("、") : "无")}</span>
+    </div>
+  </article>`;
+}
+
+function locationName(groupId, key){
+  const loc = (state.locations || []).find(item => String(item.group_id || "") === String(groupId || "") && item.location_key === key);
+  return loc ? loc.name : key;
+}
+
+function parseTags(raw){
+  try{
+    const parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  }catch{
+    return [];
+  }
 }
 
 function npcCard(n){
