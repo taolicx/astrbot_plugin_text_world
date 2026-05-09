@@ -771,6 +771,11 @@ class TextWorldService:
                 summary = f"你尝试前往{target_name}，但地图路线不成立，本轮留在原地。"
                 warnings.append(f"地图规则拦截：当前位置不能直接前往{target_name}。")
                 energy_delta = -2
+            restricted_warning = self._restricted_location_warning(target, text) if accepted else ""
+            if restricted_warning:
+                warnings.append(restricted_warning)
+                energy_delta -= 3
+                mood_delta -= 1
         elif self._looks_like_rest(text):
             summary = "你把这一轮用于休整，精力和心情略有恢复。"
             energy_delta = 12
@@ -799,11 +804,22 @@ class TextWorldService:
             money_delta = gain
             energy_delta = -14
             summary = f"你做了些力所能及的事，获得 {gain} 学都币。"
-        if any(word in text for word in ("战斗", "袭击", "硬闯", "危险", "追逐")):
-            if random.random() < 0.35:
-                injury = random.randint(3, 12)
+        if self._looks_like_ability_use(text):
+            power_cost = self._power_use_cost(row["power_level"], text)
+            energy_delta -= power_cost
+            if int(row["energy"]) < 25:
+                mood_delta -= 2
+                warnings.append("精力不足会影响个人现实演算，能力表现被压低。")
+            warnings.append(f"能力使用消耗：精力 -{power_cost}。")
+        risk_score = self._action_risk_score(text)
+        if risk_score:
+            energy_delta -= min(8, risk_score * 2)
+            if random.random() < min(0.18 + risk_score * 0.09, 0.72):
+                injury = random.randint(2 + risk_score, 6 + risk_score * 3)
                 hp_delta -= injury
                 warnings.append(f"高风险行动造成受伤：生命 -{injury}。")
+            if self._mentions_canon_core_secret(text):
+                warnings.append("核心机密线索只得到外围痕迹；本轮不会直接揭开暗部或统括理事会真相。")
 
         new_hp = clamp(int(row["hp"]) + hp_delta)
         new_energy = clamp(int(row["energy"]) + energy_delta)
@@ -1081,13 +1097,32 @@ class TextWorldService:
         matches = [row for row in rows if row["name"] in text or row["location_key"] in text]
         if not matches:
             return None
-        for row in matches:
+        target_order = self._rank_location_mentions(matches, text)
+        for row in target_order:
             if row["location_key"] != current_key and self._can_move(con, group_id, current_key, row["location_key"]):
                 return row
-        for row in matches:
+        for row in target_order:
+            if row["location_key"] != current_key:
+                return row
+        for row in target_order:
             if row["location_key"] == current_key:
                 return row
-        return matches[0]
+        return target_order[0]
+
+    def _rank_location_mentions(self, rows: list[sqlite3.Row], text: str) -> list[sqlite3.Row]:
+        intent_words = ("前往", "去", "到", "进入", "调查", "潜入", "硬闯", "搜索", "查看", "拜访", "抵达")
+
+        def score(row: sqlite3.Row) -> tuple[int, int, int]:
+            name = str(row["name"] or "")
+            key = str(row["location_key"] or "")
+            indexes = [idx for idx in (text.find(name), text.find(key)) if idx >= 0]
+            first_index = min(indexes) if indexes else len(text)
+            before = text[max(0, first_index - 12):first_index]
+            intent = 0 if any(word in before for word in intent_words) else 1
+            # Longer names are usually more specific, so prefer them when intent is tied.
+            return (intent, first_index, -len(name))
+
+        return sorted(rows, key=score)
 
     def _encounters(self, con: sqlite3.Connection, group_id: str, location_key: str, character_id: int) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
@@ -1223,3 +1258,81 @@ class TextWorldService:
 
     def _looks_like_heal(self, text: str) -> bool:
         return any(word in text.lower() for word in ("医院", "治疗", "看病", "疗伤", "包扎", "hospital", "heal", "clinic", "doctor"))
+
+    def _restricted_location_warning(self, target: sqlite3.Row, text: str) -> str:
+        tags = set(loads(target["tags"], []))
+        name = str(target["name"] or "")
+        if "禁区" in tags or "高风险" in tags:
+            if any(word in text for word in ("硬闯", "潜入", "破解", "翻墙", "强行", "偷", "黑入", "突破")):
+                return f"{name}属于高权限/高风险区域，本轮只能触及外围痕迹，强行深入会被警备或权限边界拦下。"
+            return f"{name}有权限边界，本轮按公开区域或外围行动处理。"
+        if "权限" in tags and not any(word in text for word in ("通行证", "许可", "邀请", "登记", "申请")):
+            return f"{name}需要通行许可；没有许可时只能在外围活动。"
+        return ""
+
+    def _looks_like_ability_use(self, text: str) -> bool:
+        return any(
+            word in text
+            for word in (
+                "使用能力",
+                "发动能力",
+                "能力",
+                "AIM",
+                "个人现实",
+                "电磁",
+                "念动",
+                "空间",
+                "心理",
+                "矢量",
+                "演算",
+                "超能力",
+                "异能",
+            )
+        )
+
+    def _power_use_cost(self, power_level: str, text: str) -> int:
+        level_match = re.search(r"(?:level|lv)\.?\s*([0-5])", str(power_level or ""), re.I)
+        level = int(level_match.group(1)) if level_match else 0
+        base = 4 + level * 2
+        if any(word in text for word in ("全力", "连续", "长时间", "大范围", "精密", "战斗")):
+            base += 5
+        if level <= 0:
+            base = max(3, base - 2)
+        return min(base, 22)
+
+    def _action_risk_score(self, text: str) -> int:
+        risk_keywords = (
+            ("战斗", "袭击", "硬闯", "追逐", "危险"),
+            ("潜入", "破解", "偷", "黑入", "绕过权限", "突破封锁"),
+            ("暗部", "ITEM", "GROUP", "SCHOOL", "猎犬部队", "妹妹们"),
+            ("没有窗户的大楼", "统括理事会", "树状图设计者", "滞空回线"),
+            ("魔法侧", "魔法师", "魔导书", "必要之恶教会", "罗马正教"),
+            ("幻想御手", "Level Upper", "绝对能力者进化", "量产型能力者"),
+        )
+        score = 0
+        for group in risk_keywords:
+            if any(word.lower() in text.lower() for word in group):
+                score += 1
+        return min(score, 5)
+
+    def _mentions_canon_core_secret(self, text: str) -> bool:
+        return any(
+            word.lower() in text.lower()
+            for word in (
+                "暗部",
+                "ITEM",
+                "GROUP",
+                "SCHOOL",
+                "妹妹们",
+                "绝对能力者进化",
+                "量产型能力者",
+                "树状图设计者",
+                "滞空回线",
+                "没有窗户的大楼",
+                "统括理事会",
+                "幻想御手",
+                "Level Upper",
+                "魔神",
+                "爱华斯",
+            )
+        )
