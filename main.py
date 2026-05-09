@@ -19,7 +19,7 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.3.3"
+PLUGIN_VERSION = "0.3.4"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 MAP_IMAGE_FILES: tuple[str, ...] = (
@@ -633,6 +633,7 @@ class TextWorldPlugin(Star):
 
     def _command_payload(self, event: AstrMessageEvent, names: list[str] | tuple[str, ...]) -> str:
         text = (getattr(event, "message_str", "") or "").strip()
+        text = self._strip_wake_prefixes(text)
         for name in names:
             if text == name:
                 return ""

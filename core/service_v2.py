@@ -751,6 +751,8 @@ class TextWorldService:
         text = str(row["text"])
         old_location = self._location(con, group_id, row["location_key"])
         target = self._extract_location(con, group_id, row["location_key"], text)
+        if target and target["location_key"] == row["location_key"]:
+            target = None
         energy_delta = -8
         water_delta = -random.randint(3, 6)
         satiety_delta = -random.randint(2, 5)
@@ -1008,11 +1010,7 @@ class TextWorldService:
             (group_id,),
         ).fetchall()
         text = str(row["text"])
-        selected = None
-        for item in items:
-            if item["name"] in text:
-                selected = item
-                break
+        selected = self._select_purchase_item(items, text, int(row["money"]))
         if not selected:
             selected = next((item for item in items if item["price"] <= row["money"] and int(item["stock"]) != 0), None)
         if not selected:
@@ -1047,6 +1045,59 @@ class TextWorldService:
             satiety_delta,
             mood_delta,
         )
+
+    def _select_purchase_item(self, items: list[sqlite3.Row], text: str, money: int) -> sqlite3.Row | None:
+        lower_text = text.lower()
+        explicit_intents = ("买", "购买", "付款", "结账", "buy")
+        if any(word in text or word in lower_text for word in explicit_intents):
+            for item in items:
+                if item["name"] in text:
+                    return item
+
+        keyword_groups = (
+            (self._purchase_intent_words("food"), ("便当", "套餐", "午餐", "折扣券")),
+            (self._purchase_intent_words("water"), ("水", "饮料", "果冻")),
+            (self._purchase_intent_words("heal"), ("绷带", "凝胶", "医疗")),
+            (self._purchase_intent_words("travel"), ("通勤", "地下铁", "一日券")),
+            (self._purchase_intent_words("info"), ("书库", "检索", "资料卡", "点数")),
+        )
+        for triggers, name_hints in keyword_groups:
+            if not any(word in text for word in triggers):
+                continue
+            candidates = [
+                item
+                for item in items
+                if int(item["stock"]) != 0
+                and int(item["price"]) <= money
+                and any(hint in item["name"] for hint in name_hints)
+            ]
+            if candidates:
+                return sorted(candidates, key=lambda item: self._purchase_item_score(item, name_hints))[0]
+        return None
+
+    def _purchase_item_score(self, item: sqlite3.Row, name_hints: tuple[str, ...]) -> tuple[int, int, int]:
+        name = str(item["name"] or "")
+        effect = loads(str(item["effect_json"] or "{}"), {})
+        if not isinstance(effect, dict):
+            effect = {}
+        matched_hint = next((index for index, hint in enumerate(name_hints) if hint in name), len(name_hints))
+        recovery = sum(int_value(effect.get(key), 0) for key in ("satiety", "water", "hp", "energy"))
+        return (matched_hint, -recovery, int(item["price"]))
+
+    def _purchase_intent_words(self, category: str = "") -> tuple[str, ...]:
+        groups = {
+            "food": ("吃饭", "点餐", "用餐", "午餐", "晚餐", "早餐", "热餐", "便当", "套餐", "饿"),
+            "water": ("喝水", "饮水", "补水", "口渴", "喝饮料", "补充饮料"),
+            "heal": ("绷带", "凝胶", "药", "医疗用品"),
+            "travel": ("通勤", "地铁", "公交", "单轨", "车票"),
+            "info": ("书库", "检索", "资料卡", "查询点数"),
+        }
+        if category:
+            return groups.get(category, ())
+        merged: list[str] = []
+        for words in groups.values():
+            merged.extend(words)
+        return tuple(merged)
 
     def _location(self, con: sqlite3.Connection, group_id: str, key: str) -> sqlite3.Row | None:
         return con.execute("SELECT * FROM locations WHERE group_id=? AND location_key=?", (group_id, key)).fetchone()
@@ -1246,8 +1297,22 @@ class TextWorldService:
         return any(word in text.lower() for word in ("休息", "睡觉", "放松", "恢复", "躺", "自习", "rest", "sleep"))
 
     def _looks_like_buy(self, con: sqlite3.Connection, group_id: str, text: str) -> bool:
-        if any(word in text for word in ("买", "购买", "吃饭", "点餐", "购物", "消费", "水", "面包", "buy")):
+        if any(word in text or word in text.lower() for word in ("买", "购买", "吃饭", "点餐", "用餐", "购物", "消费", "付款", "结账", "buy")):
             return True
+        broad_purchase_words = (
+            *self._purchase_intent_words("food"),
+            *self._purchase_intent_words("water"),
+            *self._purchase_intent_words("travel"),
+        )
+        if any(word in text for word in broad_purchase_words):
+            return True
+        if self._purchase_item_mentioned_with_intent(con, group_id, text):
+            return True
+        return False
+
+    def _purchase_item_mentioned_with_intent(self, con: sqlite3.Connection, group_id: str, text: str) -> bool:
+        if not any(word in text for word in ("要", "拿", "买", "购买", "兑换", "付款", "结账", "补充")):
+            return False
         return bool(con.execute(
             "SELECT 1 FROM shop_items WHERE group_id=? AND is_active=1 AND instr(?, name)>0 LIMIT 1",
             (group_id, text),
