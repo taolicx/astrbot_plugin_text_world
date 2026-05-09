@@ -26,7 +26,7 @@ HTML = r"""<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学院都市文游后台</title>
+  <title>学园都市文游后台</title>
   <style>
     :root{
       color-scheme:light;
@@ -307,7 +307,7 @@ HTML = r"""<!doctype html>
         <div class="brand">
           <div class="brand-mark">AC</div>
           <div>
-            <div class="brand-title">学院都市文游后台</div>
+            <div class="brand-title">学园都市文游后台</div>
             <div class="brand-sub">群文游世界控制台</div>
           </div>
         </div>
@@ -746,7 +746,7 @@ function metric(label, value){
 
 function worldCard(w){
   return `<article class="item">
-    <div class="item-title"><b>${esc(w.name || "学院都市")}</b>${badge(Number(w.enabled) ? "运行中" : "已停用", Number(w.enabled) ? "good" : "bad")}</div>
+    <div class="item-title"><b>${esc(w.name || "学园都市")}</b>${badge(Number(w.enabled) ? "运行中" : "已停用", Number(w.enabled) ? "good" : "bad")}</div>
     <div class="kv">
       <span>群号</span><span>${esc(w.group_id)}</span>
       <span>轮次</span><span>第 ${esc(w.current_round)} 轮</span>

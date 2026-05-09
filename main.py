@@ -75,11 +75,11 @@ PAYLOAD_COMMANDS = {"create", "action", "manual_event"}
 def help_text() -> str:
     return "\n".join(
         [
-            "【学院都市文游】",
+            "【学园都市文游】",
             "世界开启：在当前群登记世界",
             "角色卡模板：查看完整创建格式",
             "创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级：提交角色卡，需管理员审核",
-            "创建角色 我叫星野遥，是第七学区高中生，能力是微弱电磁感应：也支持自然语言提交",
+            "创建角色 我叫星野遥，是第七学区某高中学生，能力是微弱电磁感应：也支持自然语言提交",
             "行动 内容：提交本小时行动",
             "状态：查看自己的状态栏",
             "地图：查看当前位置和可前往地点",
@@ -95,7 +95,7 @@ def help_text() -> str:
 @register(
     PLUGIN_NAME,
     "codex",
-    "学院都市小时制群文游系统：群行动、统一结算、私聊结果、前端后台、角色审核、事件预设、背包商店。",
+    "学园都市小时制群文游系统：群行动、统一结算、私聊结果、前端后台、角色审核、事件预设、背包商店。",
     PLUGIN_VERSION,
     PLUGIN_REPO,
 )
@@ -295,7 +295,7 @@ class TextWorldPlugin(Star):
             return "请在群聊中使用。"
         self._last_event_by_group[group_id] = event
         world = await to_thread(self.service.ensure_world, group_id, self._origin(event))
-        return f"学院都市文字世界已开启。当前第 {world['current_round']} 轮。\n后台：http://{self.cfg.web_host}:{self.cfg.web_port}"
+        return f"学园都市文字世界已开启。当前第 {world['current_round']} 轮。\n后台：http://{self.cfg.web_host}:{self.cfg.web_port}"
 
     async def _handle_create_character(self, event: AstrMessageEvent) -> str:
         group_id = self._group_id(event)

@@ -122,7 +122,7 @@ class TextWorldDB:
             CREATE TABLE IF NOT EXISTS worlds (
               group_id TEXT PRIMARY KEY,
               group_origin TEXT NOT NULL DEFAULT '',
-              name TEXT NOT NULL DEFAULT '学院都市',
+              name TEXT NOT NULL DEFAULT '学园都市',
               enabled INTEGER NOT NULL DEFAULT 1,
               current_round INTEGER NOT NULL DEFAULT 1,
               cycle_minutes INTEGER NOT NULL DEFAULT 60,
@@ -517,7 +517,7 @@ class TextWorldDB:
                     (
                         group_id,
                         group_origin,
-                        "学院都市",
+                        "学园都市",
                         1,
                         1,
                         cycle_minutes,

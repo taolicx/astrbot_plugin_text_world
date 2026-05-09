@@ -44,90 +44,174 @@ class DefaultEventPreset:
 CHARACTER_CARD_TEMPLATE = """创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级
 
 也可以直接自然语言提交，例如：
-创建角色 我叫星野遥，是第七学区高中生兼风纪委员见习，能力是微弱电磁感应，Level 2。
+创建角色 我叫星野遥，是第七学区某高中学生兼风纪委员见习，能力是微弱电磁感应，Level 2。
 
 字段说明：
 - 游戏名：前端登录账号也会默认使用这个名字。
-- 身份：学生、风纪委员见习、警备员协助者、研究所实习生、留学生、Skill-Out边缘成员等。
-- 阵营：风纪委员、警备员、普通学生、研究机构、暗部边缘、留学生、无阵营等。
-- 能力：写清能力表现、限制和代价，避免“一击必杀、全知全能、瞬移全图”。
-- 能力等级：Level 0 / Level 1 / Level 2 / Level 3 / Level 4，Level 5 建议只允许管理员特批。
+- 身份：第七学区某高中学生、栅川中学学生、风纪委员见习、警备员协助者、研究所实习生、留学生、Skill-Out边缘成员等。
+- 阵营：普通学生、风纪委员 Judgment、警备员 Anti-Skill、研究机构、Skill-Out、暗部边缘、留学生、魔法侧访客、无阵营等。
+- 能力：按学园都市“个人现实/AIM扩散力场”的超能力体系写清表现、限制和代价；通常一名能力者只有一种主能力。
+- 能力等级：Level 0 / Level 1 / Level 2 / Level 3 / Level 4。Level 5 属于学园都市仅七人的顶级超能力者，建议只允许管理员特批；Level 6/绝对能力者禁止创建。
 
 示例：
-创建角色 星野遥 | 第七学区高中生，风纪委员见习 | 风纪委员 | 微弱电磁感应，可察觉近距离异常电流，连续使用会头痛 | Level 2
+创建角色 星野遥 | 第七学区某高中学生，风纪委员见习 | 风纪委员 Judgment | 微弱电磁感应，可察觉近距离异常电流，连续使用会头痛 | Level 2
 """
 
 
 DEFAULT_LOCATIONS: dict[str, DefaultLocation] = {
     "school_gate": DefaultLocation(
         id="school_gate",
-        name="第七学区校门口",
-        description="第七学区日常活动的入口，公告栏、安保亭和校车站都在附近。",
-        neighbors=["district_07", "main_road", "classroom", "dorm"],
-        tags=["第七学区", "公共", "交通", "起点"],
+        name="第七学区某高中校门",
+        description="上条当麻就读的某高中周边。公告栏、校车站和学生通勤人流密集，是普通学生最自然的行动起点。",
+        neighbors=["district_07", "main_road", "classroom", "dorm", "futsukaichi_station"],
+        tags=["第七学区", "学校", "交通", "起点"],
     ),
     "main_road": DefaultLocation(
         id="main_road",
-        name="第七学区主干道",
-        description="连接学校、医院、商业区和中央广场的主干道，警备机器人与校车频繁经过。",
-        neighbors=["school_gate", "district_07", "plaza", "hospital", "district_15"],
+        name="第七学区生活圈主干道",
+        description="连接某高中、学生寮、二日站、Seventh Mist、医院和风纪委员支部的日常道路，警备机器人与校车频繁经过。",
+        neighbors=["school_gate", "district_07", "plaza", "hospital", "futsukaichi_station", "seventh_mist", "judgment_177"],
         tags=["第七学区", "公共", "交通"],
     ),
     "classroom": DefaultLocation(
         id="classroom",
-        name="第七学区某高中",
-        description="普通高中教学楼，能力开发课程、补习、社团传闻和学生日常都从这里开始。",
-        neighbors=["school_gate", "library", "lab", "plaza"],
+        name="上条的高中",
+        description="第七学区的普通高中。能力开发课程、补习、社团传闻和学生日常都从这里开始。",
+        neighbors=["school_gate", "library", "plaza", "dorm", "family_restaurant"],
         tags=["第七学区", "学校", "学习"],
     ),
     "library": DefaultLocation(
         id="library",
-        name="书库终端图书馆",
-        description="安静的资料区，低权限书库终端可查询公开资料，传闻常在书架之间流动。",
-        neighbors=["classroom", "plaza", "district_18"],
+        name="校内资料室与书库公开终端",
+        description="只能查询公开等级资料的资料室。涉及研究所、暗部、滞空回线等高权限情报时，通常只会得到残缺线索。",
+        neighbors=["classroom", "plaza", "judgment_177", "district_18"],
         tags=["第七学区", "情报", "学习"],
     ),
     "lab": DefaultLocation(
         id="lab",
-        name="能力开发实验楼",
-        description="进行能力测定、AIM扩散力场观测和课程实验的设施，出入登记严格。",
-        neighbors=["classroom", "hospital", "district_02", "district_18"],
-        tags=["第七学区", "研究", "能力开发"],
+        name="研究所外围登记处",
+        description="连接水穗机构与S Processor等研究设施的外围登记处。普通玩家只能接触公开入口、访客窗口和封锁线外侧。",
+        neighbors=["hospital", "mizuho_pathology", "s_processor", "district_02", "district_18"],
+        tags=["第七学区", "研究", "能力开发", "高风险"],
     ),
     "dorm": DefaultLocation(
         id="dorm",
-        name="第七学区学生宿舍",
-        description="学生生活区，休息、串门、小交易和深夜传闻都常在这里发生。",
-        neighbors=["school_gate", "canteen", "plaza"],
+        name="第七学区学生寮",
+        description="学生生活区。休息、串门、小交易、补课通知和深夜传闻都常在这里发生。",
+        neighbors=["school_gate", "classroom", "canteen", "plaza", "family_restaurant"],
         tags=["第七学区", "生活", "休息"],
     ),
     "canteen": DefaultLocation(
         id="canteen",
-        name="学生食堂",
-        description="面向学生营业的食堂，与第四学区餐饮供应链相连，适合补充水分和饱食度。",
-        neighbors=["dorm", "market", "district_04"],
+        name="学生寮食堂",
+        description="面向学生营业的普通食堂，与第四学区食品供应链相连，适合补充水分和饱食度。",
+        neighbors=["dorm", "market", "family_restaurant", "district_04"],
         tags=["生活", "消费", "食物"],
     ),
     "market": DefaultLocation(
         id="market",
-        name="第十五学区商业街",
-        description="便利店、自动贩卖机、电子产品店和媒体屏幕密集的商业街。",
-        neighbors=["district_15", "canteen", "plaza", "district_04"],
-        tags=["第十五学区", "消费", "情报"],
+        name="第七学区商业入口",
+        description="通往Seventh Mist、七福神商店街和便利店街区的商业入口。日用品、电子产品和都市传说都容易在这里汇集。",
+        neighbors=["district_15", "canteen", "plaza", "seventh_mist", "shichifukujin_street", "district_04"],
+        tags=["第七学区", "消费", "情报", "商场"],
     ),
     "plaza": DefaultLocation(
         id="plaza",
-        name="第七学区中心广场",
-        description="活动、偶遇、公开事件和都市传说最容易聚集的开阔地。",
-        neighbors=["main_road", "library", "canteen", "market", "district_07"],
+        name="第七学区公共广场",
+        description="学生集合、公开活动、偶遇、新闻屏幕和都市传说最容易交汇的开放空间。",
+        neighbors=["main_road", "library", "canteen", "market", "shichifukujin_street", "district_07"],
         tags=["第七学区", "公共", "事件"],
     ),
     "hospital": DefaultLocation(
         id="hospital",
-        name="冥土追魂医院",
-        description="第七学区医院，重伤治疗、健康检查和奇怪医学传闻都可能发生。",
-        neighbors=["main_road", "lab", "district_07"],
+        name="冥土追魂所在医院",
+        description="第七学区内由“冥土追魂”坐镇的医院。重伤治疗、健康检查、异常医学事件和保密病历都可能发生。",
+        neighbors=["main_road", "lab", "anti_skill_07_hq", "district_07"],
         tags=["第七学区", "医疗", "恢复"],
+    ),
+    "gakusha_no_sono": DefaultLocation(
+        id="gakusha_no_sono",
+        name="学舍之园",
+        description="第七学区内由多所贵族女校组成的封闭校区，常盘台中学也在其中。进入需要许可或邀请。",
+        neighbors=["district_07", "tokiwa_dai", "seventh_mist"],
+        tags=["第七学区", "学校", "封闭校区", "权限"],
+    ),
+    "tokiwa_dai": DefaultLocation(
+        id="tokiwa_dai",
+        name="常盘台中学",
+        description="学舍之园内的顶级贵族女校，拥有御坂美琴、食蜂操祈等高等级能力者相关传闻。",
+        neighbors=["gakusha_no_sono", "sakugawa", "district_18"],
+        tags=["第七学区", "名校", "Level 5", "权限"],
+    ),
+    "sakugawa": DefaultLocation(
+        id="sakugawa",
+        name="栅川中学",
+        description="初春饰利与佐天泪子就读的普通中学，适合日常线索、学生传闻和风纪委员支部事件切入。",
+        neighbors=["tokiwa_dai", "judgment_177", "plaza"],
+        tags=["第七学区", "学校", "日常"],
+    ),
+    "futsukaichi_station": DefaultLocation(
+        id="futsukaichi_station",
+        name="地下铁二日站",
+        description="第七学区重要交通节点。适合跨区移动、跟踪、错过末班车和公共事件集合。",
+        neighbors=["school_gate", "main_road", "district_15", "district_22", "district_23"],
+        tags=["第七学区", "交通", "地铁"],
+    ),
+    "seventh_mist": DefaultLocation(
+        id="seventh_mist",
+        name="Seventh Mist",
+        description="第七学区大型综合商场。购物、兼职、失物、学生约会和突发骚动都容易发生。",
+        neighbors=["market", "main_road", "gakusha_no_sono", "shichifukujin_street"],
+        tags=["第七学区", "商场", "消费", "公共"],
+    ),
+    "family_restaurant": DefaultLocation(
+        id="family_restaurant",
+        name="家庭餐厅",
+        description="第七学区学生常去的家庭餐厅。适合低风险会面、打听公开传闻、恢复心情和补充饱食度。",
+        neighbors=["classroom", "dorm", "canteen", "shichifukujin_street"],
+        tags=["第七学区", "餐饮", "会面"],
+    ),
+    "shichifukujin_street": DefaultLocation(
+        id="shichifukujin_street",
+        name="七福神商店街",
+        description="第七学区旧式商店街，日用品、便当、街坊传闻和小型委托比大型商场更接地气。",
+        neighbors=["market", "plaza", "seventh_mist", "family_restaurant"],
+        tags=["第七学区", "商店街", "消费", "传闻"],
+    ),
+    "anti_skill_07_hq": DefaultLocation(
+        id="anti_skill_07_hq",
+        name="警备员第七学区本部",
+        description="警备员 Anti-Skill 的第七学区据点。报案、封锁线、训练委托和学生安全事件都从这里扩散。",
+        neighbors=["hospital", "judgment_177", "main_road", "district_02"],
+        tags=["第七学区", "警备员", "秩序"],
+    ),
+    "judgment_177": DefaultLocation(
+        id="judgment_177",
+        name="风纪委员活动第177支部",
+        description="风纪委员 Judgment 的常见支部之一，适合失物、巡逻、学生纠纷和公开情报检索。",
+        neighbors=["main_road", "library", "sakugawa", "anti_skill_07_hq"],
+        tags=["第七学区", "风纪委员", "秩序", "情报"],
+    ),
+    "windowless_building": DefaultLocation(
+        id="windowless_building",
+        name="没有窗户的大楼",
+        description="亚雷斯塔相关传闻的核心禁区。普通角色只能远望或听到流言，不能直接闯入。",
+        neighbors=["district_07", "anti_skill_07_hq"],
+        tags=["第七学区", "统括理事会", "禁区", "高风险"],
+    ),
+    "mizuho_pathology": DefaultLocation(
+        id="mizuho_pathology",
+        name="水穗机构・病理解析研究所",
+        description="与御坂妹妹相关实验传闻相连的研究设施。适合调查外围、文件碎片和警备封锁事件。",
+        neighbors=["lab", "s_processor", "district_18"],
+        tags=["第七学区", "研究所", "暗线", "高风险"],
+    ),
+    "s_processor": DefaultLocation(
+        id="s_processor",
+        name="S Processor 脑神经应用分析所",
+        description="与脑神经、能力开发和实验数据相关的研究设施。普通行动只能触及公开入口或外围异常。",
+        neighbors=["lab", "mizuho_pathology", "district_18"],
+        tags=["第七学区", "研究所", "能力开发", "高风险"],
     ),
     "district_01": DefaultLocation(
         id="district_01",
@@ -174,12 +258,24 @@ DEFAULT_LOCATIONS: dict[str, DefaultLocation] = {
     "district_07": DefaultLocation(
         id="district_07",
         name="第七学区（中心学区）",
-        description="学园都市中心，故事最主要发生地，中学、医院、无窗大楼传闻都在这里交汇。",
+        description="学园都市中心，也是《魔禁/超炮》主要舞台。上条的高中、学舍之园、常盘台中学、栅川中学、冥土追魂医院、无窗大楼等关键地点都在这里交汇。",
         neighbors=[
             "school_gate",
             "main_road",
             "plaza",
             "hospital",
+            "gakusha_no_sono",
+            "tokiwa_dai",
+            "sakugawa",
+            "futsukaichi_station",
+            "seventh_mist",
+            "family_restaurant",
+            "shichifukujin_street",
+            "anti_skill_07_hq",
+            "judgment_177",
+            "windowless_building",
+            "mizuho_pathology",
+            "s_processor",
             "district_01",
             "district_02",
             "district_06",
@@ -265,7 +361,7 @@ DEFAULT_LOCATIONS: dict[str, DefaultLocation] = {
         id="district_18",
         name="第十八学区（能力开发名校区）",
         description="雾丘女学院、长点上机学园等名校和附属研究机构集中，优等生很多。",
-        neighbors=["district_05", "district_07", "district_21", "classroom", "library", "lab"],
+        neighbors=["district_05", "district_07", "district_21", "classroom", "library", "lab", "tokiwa_dai", "mizuho_pathology", "s_processor"],
         tags=["名校", "能力开发", "研究"],
     ),
     "district_19": DefaultLocation(
@@ -307,30 +403,59 @@ DEFAULT_LOCATIONS: dict[str, DefaultLocation] = {
 
 
 DEFAULT_NPCS: dict[str, DefaultNPC] = {
+    "kamijou_touma": DefaultNPC(
+        id="kamijou_touma",
+        name="上条当麻",
+        role="第七学区某高中学生，右手寄宿着可消除异能之力的“幻想杀手”。",
+        faction="普通学生",
+        location_id="classroom",
+        disposition="热心",
+        memory="会卷入麻烦并帮助弱者，但不会替玩家解决所有问题；涉及魔法侧时只留下克制线索。",
+        schedule_hint="上课日多在某高中、学生寮和家庭餐厅附近。",
+    ),
+    "misaka_mikoto": DefaultNPC(
+        id="misaka_mikoto",
+        name="御坂美琴",
+        role="常盘台中学学生，学园都市第三位 Level 5，能力名“超电磁炮”。",
+        faction="常盘台中学",
+        location_id="tokiwa_dai",
+        disposition="爽快",
+        memory="讨厌伤害无辜者的实验和事件，愿意帮忙处理公开层面的学生危机。",
+        schedule_hint="常在常盘台、Seventh Mist、栅川中学周边行动。",
+    ),
     "judgment_support": DefaultNPC(
         id="judgment_support",
         name="初春饰利",
         role="风纪委员支部的情报支援，擅长公开网络与书库终端检索。",
-        faction="风纪委员",
-        location_id="library",
+        faction="风纪委员 Judgment",
+        location_id="judgment_177",
         disposition="友好",
-        memory="会提醒玩家不要越权调查，也会提供公开情报线索。",
+        memory="会提醒玩家不要越权调查，也会提供公开情报、失物线索和支部委托。",
     ),
     "judgment_teleporter": DefaultNPC(
         id="judgment_teleporter",
         name="白井黑子",
         role="常盘台中学学生兼风纪委员，Level 4空间移动能力者。",
-        faction="风纪委员",
-        location_id="district_07",
+        faction="风纪委员 Judgment",
+        location_id="judgment_177",
         disposition="严格",
-        memory="对违法行动非常敏感，认可守规矩的协助者。",
+        memory="对违法行动非常敏感，认可守规矩的协助者；玩家不能借她的空间移动绕过地图路线。",
+    ),
+    "saten_ruiko": DefaultNPC(
+        id="saten_ruiko",
+        name="佐天泪子",
+        role="栅川中学学生，Level 0，擅长收集学生间流传的都市传说。",
+        faction="普通学生",
+        location_id="sakugawa",
+        disposition="开朗",
+        memory="会把听来的传闻分享给可信玩家，但传闻真假需要自行判断。",
     ),
     "anti_skill_teacher": DefaultNPC(
         id="anti_skill_teacher",
         name="黄泉川爱穗",
         role="警备员兼教师，负责训练与现场秩序维护。",
-        faction="警备员",
-        location_id="district_02",
+        faction="警备员 Anti-Skill",
+        location_id="anti_skill_07_hq",
         disposition="可靠",
         memory="会把学生安全放在第一位，对危险行动会直接劝阻。",
     ),
@@ -342,6 +467,15 @@ DEFAULT_NPCS: dict[str, DefaultNPC] = {
         location_id="hospital",
         disposition="温和",
         memory="不会随便透露病人隐私，但会给受伤玩家提供治疗建议。",
+    ),
+    "index_librorum": DefaultNPC(
+        id="index_librorum",
+        name="茵蒂克丝",
+        role="拥有完全记忆能力的禁书目录少女，魔法侧信息以传闻和片段方式出现。",
+        faction="魔法侧访客",
+        location_id="dorm",
+        disposition="好奇",
+        memory="不主动讲出大量魔法知识；只在相关事件中给出非常有限的提示。",
     ),
     "komoe_teacher": DefaultNPC(
         id="komoe_teacher",
@@ -360,6 +494,24 @@ DEFAULT_NPCS: dict[str, DefaultNPC] = {
         location_id="district_01",
         disposition="公事公办",
         memory="只处理正规申请，对黑箱问题保持沉默。",
+    ),
+    "accelerator_rumor": DefaultNPC(
+        id="accelerator_rumor",
+        name="一方通行的传闻",
+        role="学园都市第一位 Level 5 的行动传闻，不作为普通可驱使 NPC 使用。",
+        faction="统括理事会/暗部边缘",
+        location_id="windowless_building",
+        disposition="危险",
+        memory="只能作为高风险公共新闻、远处痕迹或官方噤声出现，不能被玩家随意召唤帮忙。",
+    ),
+    "item_contact": DefaultNPC(
+        id="item_contact",
+        name="ITEM外围联络痕迹",
+        role="暗部组织 ITEM 的外围线索，常以匿名终端、委托残片或商业街传闻出现。",
+        faction="暗部 ITEM",
+        location_id="seventh_mist",
+        disposition="危险",
+        memory="只提供边缘任务钩子，不直接让麦野沉利等核心成员随意登场。",
     ),
     "dark_contact": DefaultNPC(
         id="dark_contact",
@@ -431,25 +583,39 @@ DEFAULT_SHOP_ITEMS = [
     DefaultShopItem("便携终端电池", "给手机和小型终端补电的电池包。", 20, {"energy": 8}),
     DefaultShopItem("研究区临时通行证", "只对公开参观区有效的临时通行证。", 80, {"mood": 1}),
     DefaultShopItem("防水学生包", "能放入随身物品的耐用学生包。", 60, {"mood": 1}),
+    DefaultShopItem("家庭餐厅套餐券", "第七学区家庭餐厅可用，适合会面或恢复心情。", 28, {"satiety": 30, "mood": 3}),
+    DefaultShopItem("Seventh Mist购物券", "大型商场通用小额券，购买日用品时很方便。", 50, {"mood": 2}),
+    DefaultShopItem("七福神商店街折扣券", "旧式商店街小店通用，可换取便当或日用品折扣。", 18, {"satiety": 12, "mood": 2}),
+    DefaultShopItem("地下铁一日券", "二日站等交通节点可用，跨区移动前准备更省力。", 20, {"energy": 6, "mood": 1}),
+    DefaultShopItem("书库公开检索点数", "只能查询公开权限资料，无法突破研究所或统括理事会权限。", 35, {"mood": 2}),
 ]
 
 
 DEFAULT_EVENT_PRESETS = [
-    DefaultEventPreset("大霸星祭筹备公告", "第七学区与第二十学区开始征集志愿者，参与者可能获得学都币和传闻线索。", {"mood": 1}),
-    DefaultEventPreset("第四学区限时餐饮折扣", "第四学区餐饮店联合促销，食堂窗口也开始排队。", {"satiety": 3, "mood": 1}),
+    DefaultEventPreset("大霸星祭筹备公告", "第七学区与第二十学区开始征集志愿者，参与者可能获得学都币和公开传闻线索。", {"mood": 1}),
+    DefaultEventPreset("Seventh Mist临时骚动", "第七学区大型商场出现短暂人流拥堵，风纪委员开始维持秩序。", {"energy": -1, "mood": 1}),
+    DefaultEventPreset("风纪委员第177支部失物委托", "177支部发布失物招领与寻人协助，适合低风险调查行动。", {"mood": 1}),
+    DefaultEventPreset("警备员第七学区本部封锁线", "警备员在医院与研究所附近设下封锁线，公开理由是设备故障演练。", {"energy": -1}),
+    DefaultEventPreset("常盘台周边通行检查", "学舍之园周边临时加强通行证检查，无许可角色只能在外围行动。", {"mood": 0}),
+    DefaultEventPreset("栅川中学都市传说流行", "学生间流传新的都市传说，关键词与滞空回线、Level 5和旧实验记录有关。", {"mood": 1}),
+    DefaultEventPreset("第四学区限时餐饮折扣", "第四学区餐饮店联合促销，食堂窗口和家庭餐厅也开始排队。", {"satiety": 3, "mood": 1}),
     DefaultEventPreset("第十一学区物流安检升级", "陆路玄关口临时加严货检，跨区配送变慢，商业街议论纷纷。", {"energy": -1}),
-    DefaultEventPreset("第十五学区都市传说专题", "媒体屏幕滚动播放都市传说专题，关于滞空回线的关键词突然变热。", {"mood": 1}),
     DefaultEventPreset("第十八学区能力测定日", "名校区公开能力测定仪器试用名额，学生们开始比较能力精度。", {"energy": -1, "mood": 2}),
     DefaultEventPreset("第二十一学区水库调度", "水源区进行临时调度，自动贩卖机补水商品短暂涨价的传闻出现。", {"water": -1}),
     DefaultEventPreset("第二十二学区地下街停电演习", "地下街进行应急演练，部分路线需要绕行。", {"energy": -1}),
     DefaultEventPreset("第十学区少年院异动传闻", "第十学区出现关于少年院地下室的流言，警备员提醒学生不要靠近。", {"mood": -1}),
     DefaultEventPreset("警备机器人巡逻升级", "多学区警备机器人开始追加巡逻，公开区域秩序变好，暗处行动更难。", {"mood": 1}),
-    DefaultEventPreset("书库终端维护", "图书馆公开书库终端维护，资料查询速度变慢，但也有人发现了旧缓存。", {"mood": 0}),
+    DefaultEventPreset("书库终端维护", "公开书库终端维护，资料查询速度变慢，但也有人发现了旧缓存。", {"mood": 0}),
 ]
 
 
 EVENT_SEEDS = [
     "大霸星祭筹备志愿者开始招募，第二十学区训练设施人流增加。",
+    "Seventh Mist楼层广播突然中断数秒，风纪委员随后赶到维持秩序。",
+    "风纪委员第177支部发布失物招领，里面有一张没有署名的地下铁一日券。",
+    "学舍之园周边临时加强通行检查，常盘台方向的人流明显变慢。",
+    "栅川中学学生之间开始流传一条和Level 5有关的新都市传说。",
+    "警备员第七学区本部在医院附近拉起封锁线，理由暂未公开。",
     "第四学区餐饮折扣的消息传开，学生食堂窗口排起长队。",
     "第十一学区物流口临时安检升级，部分商品到货延迟。",
     "第十五学区媒体屏幕开始滚动播放都市传说专题。",
@@ -459,7 +625,6 @@ EVENT_SEEDS = [
     "第十学区少年院附近出现警备员封锁线，原因暂未公开。",
     "警备机器人巡逻路线更新，主干道上的摄像头也多了几台。",
     "书库终端维护时出现旧缓存，几条过期传闻被重新翻出。",
-    "风纪委员支部发布失物招领，里面有一张没有署名的通勤券。",
     "商业街自动贩卖机吞掉两千元纸币的传闻又开始流行。",
 ]
 

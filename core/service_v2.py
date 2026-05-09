@@ -426,7 +426,7 @@ class TextWorldService:
                 "SELECT * FROM locations WHERE group_id=? ORDER BY sort_order,id",
                 (group_id,),
             ).fetchall()
-            lines = ["【学院都市地图】"]
+            lines = ["【学园都市地图】"]
             if char:
                 loc = self._location(con, group_id, char["location_key"])
                 if loc:
@@ -854,11 +854,11 @@ class TextWorldService:
         roster: dict[str, list[str]],
         event: dict[str, Any] | None,
     ) -> str:
-        lines = [f"【第 {round_no} 轮学院都市更新】"]
+        lines = [f"【第 {round_no} 轮学园都市更新】"]
         if outcomes:
             lines.append(f"{len(outcomes)} 名角色完成了本轮行动。")
         else:
-            lines.append("本轮没有收到玩家行动，学院都市按自己的节奏继续运转。")
+            lines.append("本轮没有收到玩家行动，学园都市按自己的节奏继续运转。")
         crowded = [f"{place}：{', '.join(names[:5])}" for place, names in roster.items() if len(names) >= 2]
         if crowded:
             lines.append("公开可见的聚集点：" + "；".join(crowded[:4]))
@@ -924,7 +924,7 @@ class TextWorldService:
 
     def _random_event(self, con: sqlite3.Connection, group_id: str) -> dict[str, Any]:
         locations = con.execute("SELECT * FROM locations WHERE group_id=? ORDER BY RANDOM() LIMIT 1", (group_id,)).fetchone()
-        loc_name = locations["name"] if locations else "学院都市"
+        loc_name = locations["name"] if locations else "学园都市"
         return {
             "title": "随机公共事件",
             "description": f"{loc_name}附近出现新动向：{random.choice(EVENT_SEEDS)}",
@@ -1158,6 +1158,15 @@ class TextWorldService:
             "绝对能力者",
             "level6",
             "lv6",
+            "魔神",
+            "统括理事长",
+            "亚雷斯塔",
+            "爱华斯",
+            "上条当麻本人",
+            "御坂美琴本人",
+            "一方通行本人",
+            "幻想杀手",
+            "十万三千本魔道书",
             "全知全能",
             "无敌",
             "秒杀",
