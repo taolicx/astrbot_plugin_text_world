@@ -94,7 +94,9 @@ class BatchNarrator:
                     "identity 是身份简介，尽量压缩成一句话。",
                     "faction 是阵营归类，优先使用普通学生、风纪委员 Judgment、警备员 Anti-Skill、研究机构、Skill-Out、暗部边缘、留学生、魔法侧访客、无阵营。",
                     "ability 是能力描述，尽量保留自然语言里的核心能力，并写出限制或代价。",
-                    "power_level 只能是 Level 0 到 Level 5；普通玩家优先整理为 Level 0 到 Level 4。",
+                    "power_level 只能是 Level 0 到 Level 5；普通玩家没有明确写等级时默认整理为 Level 3。",
+                    "outfit 是穿衣着装，提取玩家写到的服装、制服、外套、随身显眼穿搭；没有就空字符串。",
+                    "body_profile 是简易身材数据，提取身高、体型、发型等低敏外观；没有就空字符串，不要补编。",
                     "如果原文暗示高阶能力，最多整理到 Level 4；只有明确写 Level 5 才可保留 Level 5，不能输出更高等级。",
                     "不得把玩家整理成上条当麻、御坂美琴、一方通行等原作角色本人。",
                     "如果玩家声称拥有幻想杀手、心理掌握、矢量操作、超电磁炮本人级能力，保留为相似但弱化的原创能力并写明限制。",
@@ -104,7 +106,9 @@ class BatchNarrator:
                     "identity": "身份",
                     "faction": "阵营",
                     "ability": "能力",
-                    "power_level": "Level 0",
+                    "power_level": "Level 3",
+                    "outfit": "穿衣着装",
+                    "body_profile": "简易身材数据",
                 },
                 "input": {
                     "sender_id": sender_id,
@@ -159,7 +163,9 @@ class BatchNarrator:
                 "- identity：身份简介，尽量一句话。",
                 "- faction：阵营，优先使用普通学生、风纪委员 Judgment、警备员 Anti-Skill、研究机构、Skill-Out、暗部边缘、留学生、魔法侧访客、无阵营。",
                 "- ability：能力描述，保留核心设定，不要乱加新能力，尽量补一句限制或代价。",
-                "- power_level：只能输出 Level 0 / Level 1 / Level 2 / Level 3 / Level 4 / Level 5；普通玩家优先 Level 0 到 Level 4。",
+                "- power_level：只能输出 Level 0 / Level 1 / Level 2 / Level 3 / Level 4 / Level 5；普通玩家未写等级时默认 Level 3。",
+                "- outfit：穿衣着装，只提取玩家明确写过的服装信息，缺失时输出空字符串。",
+                "- body_profile：简易身材数据，只提取身高、体型、发型等低敏外观，缺失时输出空字符串。",
                 "如果原文表达模糊，优先保守整理，保持可审核。",
                 "不得把玩家整理成原作角色本人、绝对能力者、魔神、统括理事长或暗部核心首领。",
                 "如果玩家使用原作角色招牌能力名，整理为原创弱化变体，例如低强度电磁感知、局部矢量感知、短距念动辅助等，并保留审核余地。",
@@ -175,6 +181,8 @@ class BatchNarrator:
             "faction": self._clip(self._text_value(data.get("faction") or data.get("camp") or data.get("group") or ""), 80),
             "ability": self._clip(self._text_value(data.get("ability") or data.get("power") or data.get("skill") or ""), 240),
             "power_level": self._normalize_power_level(data.get("power_level") or data.get("level") or ""),
+            "outfit": self._clip(self._text_value(data.get("outfit") or data.get("clothing") or data.get("wearing") or ""), 120),
+            "body_profile": self._clip(self._text_value(data.get("body_profile") or data.get("body") or data.get("appearance") or ""), 120),
         }
         if not normalized["game_name"]:
             normalized["game_name"] = self._guess_game_name(raw_text, sender_id)
@@ -194,6 +202,8 @@ class BatchNarrator:
             "faction": self._guess_faction(raw_text),
             "ability": self._guess_ability(raw_text),
             "power_level": self._normalize_power_level(raw_text),
+            "outfit": self._guess_outfit(raw_text),
+            "body_profile": self._guess_body_profile(raw_text),
         }
 
     def _text_value(self, value: Any) -> str:
@@ -274,10 +284,32 @@ class BatchNarrator:
         text = re.sub(r"[\s，,；;。]*[0-9]+\s*级[\s。；;，,]*$", "", text)
         return text.strip()
 
+    def _guess_outfit(self, raw_text: str) -> str:
+        text = self._text_value(raw_text)
+        patterns = [
+            r"(?:穿着|穿|服装|着装|衣服|制服|外套)\s*(?:是|为|:|：)?\s*([^。；;\n]{2,80})",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return self._clip(match.group(1), 120)
+        return ""
+
+    def _guess_body_profile(self, raw_text: str) -> str:
+        text = self._text_value(raw_text)
+        parts: list[str] = []
+        height = re.search(r"([12]?[0-9]{2})\s*(?:cm|厘米|公分)", text, re.I)
+        if height:
+            parts.append(height.group(0))
+        for keyword in ("偏瘦", "纤细", "普通体型", "结实", "高挑", "娇小", "短发", "长发", "黑发", "白发", "茶发"):
+            if keyword in text and keyword not in parts:
+                parts.append(keyword)
+        return self._clip("，".join(parts), 120)
+
     def _normalize_power_level(self, raw_value: Any) -> str:
         text = self._text_value(raw_value).lower()
         if not text:
-            return "Level 0"
+            return "Level 3"
         match = re.search(r"(?:level|lv\.?)\s*([0-9]+)", text, re.I)
         if not match:
             match = re.search(r"([0-9]+)\s*级", text)
@@ -290,7 +322,7 @@ class BatchNarrator:
             return "Level 4"
         if any(keyword in text for keyword in ("无能力", "普通人", "level 0", "lv0", "lv 0", "0级", "零级")):
             return "Level 0"
-        return "Level 0"
+        return "Level 3"
 
     def _sender_tail(self, sender_id: str) -> str:
         sender_id = re.sub(r"\s+", "", str(sender_id or ""))

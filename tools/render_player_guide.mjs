@@ -12,7 +12,8 @@ const targets = [
   ["card-start", "玩家图文说明书_01_开局流程.png"],
   ["card-character", "玩家图文说明书_02_角色卡.png"],
   ["card-action", "玩家图文说明书_03_行动写法.png"],
-  ["card-commands", "玩家图文说明书_04_指令速查.png"],
+  ["card-commands", "玩家图文说明书_04_全指令速查.png"],
+  ["card-system", "玩家图文说明书_05_系统后台规则.png"],
 ];
 
 const browser = await chromium.launch({

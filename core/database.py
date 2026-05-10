@@ -162,7 +162,13 @@ class TextWorldDB:
               identity TEXT NOT NULL DEFAULT '',
               faction TEXT NOT NULL DEFAULT '',
               ability TEXT NOT NULL DEFAULT '',
-              power_level TEXT NOT NULL DEFAULT 'Level 0',
+              power_level TEXT NOT NULL DEFAULT 'Level 3',
+              outfit TEXT NOT NULL DEFAULT '',
+              body_profile TEXT NOT NULL DEFAULT '',
+              ability_exp INTEGER NOT NULL DEFAULT 0,
+              daily_development_date TEXT NOT NULL DEFAULT '',
+              death_protection INTEGER NOT NULL DEFAULT 0,
+              traits_json TEXT NOT NULL DEFAULT '[]',
               audit_status TEXT NOT NULL DEFAULT 'pending',
               location_key TEXT NOT NULL DEFAULT 'school_gate',
               hp INTEGER NOT NULL DEFAULT 100,
@@ -299,7 +305,13 @@ class TextWorldDB:
                 "display_name": "TEXT NOT NULL DEFAULT ''",
                 "faction": "TEXT NOT NULL DEFAULT ''",
                 "ability": "TEXT NOT NULL DEFAULT ''",
-                "power_level": "TEXT NOT NULL DEFAULT 'Level 0'",
+                "power_level": "TEXT NOT NULL DEFAULT 'Level 3'",
+                "outfit": "TEXT NOT NULL DEFAULT ''",
+                "body_profile": "TEXT NOT NULL DEFAULT ''",
+                "ability_exp": "INTEGER NOT NULL DEFAULT 0",
+                "daily_development_date": "TEXT NOT NULL DEFAULT ''",
+                "death_protection": "INTEGER NOT NULL DEFAULT 0",
+                "traits_json": "TEXT NOT NULL DEFAULT '[]'",
                 "audit_status": "TEXT NOT NULL DEFAULT 'pending'",
                 "location_key": "TEXT NOT NULL DEFAULT 'school_gate'",
                 "hp": "INTEGER NOT NULL DEFAULT 100",
@@ -609,13 +621,14 @@ class TextWorldDB:
             con.execute(
                 """
                 UPDATE npcs
-                SET name=?,role=?,faction=?,disposition=?,memory=?,updated_at=?
+                SET name=?,role=?,faction=?,location_key=?,disposition=?,memory=?,updated_at=?
                 WHERE group_id=? AND npc_key=?
                 """,
                 (
                     npc.name,
                     npc.role,
                     npc.faction,
+                    npc.location_id,
                     npc.disposition,
                     npc.memory,
                     now,

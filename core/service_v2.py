@@ -67,7 +67,9 @@ class TextWorldService:
         *,
         faction: str = "",
         ability: str = "",
-        power_level: str = "Level 0",
+        power_level: str = "Level 3",
+        outfit: str = "",
+        body_profile: str = "",
         approve: bool = False,
     ) -> tuple[bool, str]:
         qq_id = str(qq_id or "").strip()
@@ -78,7 +80,9 @@ class TextWorldService:
         identity = self.clean_text(identity, 240)
         faction = self.clean_text(faction, 80)
         ability = self.clean_text(ability, 240)
-        power_level = self.clean_text(power_level, 20) or "Level 0"
+        power_level = self.clean_text(power_level, 20) or "Level 3"
+        outfit = self.clean_text(outfit, 120)
+        body_profile = self.clean_text(body_profile, 120)
         if not game_name or not identity:
             return False, "格式：创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级"
         card_cheat = self.character_card_cheat_reason(
@@ -113,16 +117,16 @@ class TextWorldService:
             if row:
                 con.execute(
                     """
-                    UPDATE characters SET user_id=?,game_name=?,display_name=?,identity=?,faction=?,ability=?,power_level=?,audit_status=?,updated_at=?
+                    UPDATE characters SET user_id=?,game_name=?,display_name=?,identity=?,faction=?,ability=?,power_level=?,outfit=?,body_profile=?,audit_status=?,updated_at=?
                     WHERE id=?
                     """,
-                    (user_id, game_name, game_name, identity, faction, ability, power_level, status, now, row["id"]),
+                    (user_id, game_name, game_name, identity, faction, ability, power_level, outfit, body_profile, status, now, row["id"]),
                 )
                 return True, "角色卡已更新，等待管理员审核。" if not approve else "角色卡已更新并通过。"
             con.execute(
                 """
-                INSERT INTO characters(group_id,user_id,qq_id,game_name,display_name,identity,faction,ability,power_level,audit_status,location_key,hp,energy,water,satiety,mood,money,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO characters(group_id,user_id,qq_id,game_name,display_name,identity,faction,ability,power_level,outfit,body_profile,audit_status,location_key,hp,energy,water,satiety,mood,money,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     group_id,
@@ -134,6 +138,8 @@ class TextWorldService:
                     faction,
                     ability,
                     power_level,
+                    outfit,
+                    body_profile,
                     status,
                     "school_gate",
                     100,
@@ -157,9 +163,28 @@ class TextWorldService:
             return 0
 
         def work(con: sqlite3.Connection) -> int:
+            rows = con.execute(
+                "SELECT id,audit_status FROM characters WHERE qq_id=? ORDER BY updated_at DESC, id DESC",
+                (qq_id,),
+            ).fetchall()
+            if not rows:
+                return 0
+            approved_rows = [row for row in rows if str(row["audit_status"]) == "approved"]
+            if len(approved_rows) == 1:
+                target_id = int(approved_rows[0]["id"])
+            elif len(approved_rows) > 1:
+                return -1
+            elif len(rows) == 1:
+                target_id = int(rows[0]["id"])
+            else:
+                return -1
+            con.execute(
+                "UPDATE characters SET private_origin='', updated_at=? WHERE qq_id=?",
+                (utc_now_iso(), qq_id),
+            )
             cur = con.execute(
-                "UPDATE characters SET private_origin=?, updated_at=? WHERE qq_id=?",
-                (private_origin, utc_now_iso(), qq_id),
+                "UPDATE characters SET private_origin=?, updated_at=? WHERE id=?",
+                (private_origin, utc_now_iso(), target_id),
             )
             return int(cur.rowcount)
 
@@ -244,7 +269,9 @@ class TextWorldService:
                 """
                 SELECT actions.*, characters.qq_id, characters.game_name, characters.location_key, characters.hp, characters.energy,
                        characters.water, characters.satiety, characters.mood, characters.money, characters.identity, characters.faction,
-                       characters.ability, characters.power_level
+                       characters.ability, characters.power_level, characters.outfit, characters.body_profile,
+                       characters.ability_exp, characters.daily_development_date, characters.death_protection,
+                       characters.traits_json
                 FROM actions
                 JOIN characters ON characters.id=actions.character_id
                 WHERE actions.group_id=? AND actions.round_no=? AND actions.status='pending'
@@ -374,6 +401,7 @@ class TextWorldService:
                   {extra_where}
                 ORDER BY
                   CASE WHEN characters.private_origin<>'' THEN 0 ELSE 1 END,
+                  CASE WHEN characters.audit_status='approved' THEN 0 ELSE 1 END,
                   worlds.updated_at DESC,
                   characters.updated_at DESC,
                   characters.id DESC
@@ -389,6 +417,15 @@ class TextWorldService:
                     return dict(rows[0])
                 if len(rows) > 1:
                     return {"ambiguous": True}
+
+            approved_rows = con.execute(
+                base_sql.format(extra_where="AND characters.private_origin='' AND characters.audit_status='approved'"),
+                (qq_id,),
+            ).fetchall()
+            if len(approved_rows) == 1:
+                return dict(approved_rows[0])
+            if len(approved_rows) > 1:
+                return {"ambiguous": True}
 
             rows = con.execute(
                 base_sql.format(extra_where="AND characters.private_origin=''"),
@@ -517,7 +554,13 @@ class TextWorldService:
                         """,
                         tuple(world_ids),
                     ).fetchall()]
-                    npcs = [dict(row) for row in con.execute(f"SELECT npc_key,group_id,name,role,faction,location_key,disposition FROM npcs WHERE group_id IN ({placeholders}) ORDER BY group_id,name LIMIT 200", tuple(world_ids)).fetchall()]
+                    npcs = [
+                        dict(row)
+                        for row in con.execute(
+                            f"SELECT npc_key,group_id,name,role,faction,location_key,disposition,memory FROM npcs WHERE group_id IN ({placeholders}) ORDER BY group_id,name LIMIT 200",
+                            tuple(world_ids),
+                        ).fetchall()
+                    ]
                     locations = [
                         dict(row)
                         for row in con.execute(
@@ -588,7 +631,12 @@ class TextWorldService:
                 "identity": self.clean_text(str(payload.get("identity") if payload.get("identity") is not None else (row["identity"] if row else "")), 240),
                 "faction": self.clean_text(str(payload.get("faction") if payload.get("faction") is not None else (row["faction"] if row else "")), 80),
                 "ability": self.clean_text(str(payload.get("ability") if payload.get("ability") is not None else (row["ability"] if row else "")), 240),
-                "power_level": self.clean_text(str(payload.get("power_level") if payload.get("power_level") is not None else (row["power_level"] if row else "Level 0")), 20) or "Level 0",
+                "power_level": self.clean_text(str(payload.get("power_level") if payload.get("power_level") is not None else (row["power_level"] if row else "Level 3")), 20) or "Level 3",
+                "outfit": self.clean_text(str(payload.get("outfit") if payload.get("outfit") is not None else (row["outfit"] if row else "")), 120),
+                "body_profile": self.clean_text(str(payload.get("body_profile") if payload.get("body_profile") is not None else (row["body_profile"] if row else "")), 120),
+                "ability_exp": max(0, int_value(payload.get("ability_exp"), int(row["ability_exp"]) if row else 0)),
+                "death_protection": max(0, int_value(payload.get("death_protection"), int(row["death_protection"]) if row else 0)),
+                "traits_json": self._clean_traits_json(payload.get("traits_json") if payload.get("traits_json") is not None else (row["traits_json"] if row else "[]")),
                 "audit_status": audit_status,
                 "location_key": location_key,
                 "hp": clamp(int_value(payload.get("hp"), int(row["hp"]) if row else 100)),
@@ -608,7 +656,7 @@ class TextWorldService:
             if row:
                 con.execute(
                     """
-                    UPDATE characters SET user_id=?,game_name=?,display_name=?,identity=?,faction=?,ability=?,power_level=?,audit_status=?,location_key=?,hp=?,energy=?,water=?,satiety=?,mood=?,money=?,updated_at=?
+                    UPDATE characters SET user_id=?,game_name=?,display_name=?,identity=?,faction=?,ability=?,power_level=?,outfit=?,body_profile=?,ability_exp=?,death_protection=?,traits_json=?,audit_status=?,location_key=?,hp=?,energy=?,water=?,satiety=?,mood=?,money=?,updated_at=?
                     WHERE id=?
                     """,
                     (user_id, *fields.values(), now, row["id"]),
@@ -616,8 +664,8 @@ class TextWorldService:
             else:
                 con.execute(
                     """
-                    INSERT INTO characters(group_id,user_id,qq_id,game_name,display_name,identity,faction,ability,power_level,audit_status,location_key,hp,energy,water,satiety,mood,money,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    INSERT INTO characters(group_id,user_id,qq_id,game_name,display_name,identity,faction,ability,power_level,outfit,body_profile,ability_exp,death_protection,traits_json,audit_status,location_key,hp,energy,water,satiety,mood,money,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (group_id, user_id, qq_id, *fields.values(), now, now),
                 )
@@ -729,8 +777,10 @@ class TextWorldService:
                 f"【{char['game_name']} 的状态栏】",
                 f"身份：{char['identity'] or '未设定'}",
                 f"阵营：{char['faction'] or '无'}",
-                f"能力：{char['ability'] or '未设定'}",
-                f"战斗力：{char['power_level']}",
+                f"能力名称-等级：{char['ability'] or '未设定'} - {char['power_level']}",
+                f"能力经验：{int(char['ability_exp'])}/{self._next_level_exp(char['power_level'])}",
+                f"穿衣着装：{char['outfit'] or '日常学生装/未详细设定'}",
+                f"简易身材：{char['body_profile'] or '未详细设定'}",
                 f"审核：{self.audit_label(char['audit_status'])}",
                 f"位置：{location_name}",
                 f"生命：{char['hp']}/100",
@@ -739,6 +789,8 @@ class TextWorldService:
                 f"饱食度：{char['satiety']}/100",
                 f"心情：{char['mood']}/100",
                 f"学都币：{char['money']}",
+                f"死亡保护：{char['death_protection']} 次",
+                f"词条：{self._traits_text(char['traits_json'])}",
                 f"背包：{bag}",
                 f"本轮行动：{'已提交' if pending else '未提交'}",
                 f"当前轮次：第 {world['current_round'] if world else '-'} 轮",
@@ -759,9 +811,14 @@ class TextWorldService:
         mood_delta = random.choice([-1, 0, 1])
         money_delta = 0
         hp_delta = 0
+        exp_delta = 0
+        death_protection_delta = 0
+        development_mark = ""
         location_key = row["location_key"]
         summary = "你的行动被记录并执行，具体细节会在本轮剧情里展开。"
         accepted = True
+        development_intent = self._looks_like_development(text)
+        battle_intent = self._looks_like_battle(text)
         if target:
             if self._can_move(con, group_id, row["location_key"], target["location_key"]):
                 location_key = target["location_key"]
@@ -778,6 +835,23 @@ class TextWorldService:
                 warnings.append(restricted_warning)
                 energy_delta -= 3
                 mood_delta -= 1
+            if accepted and development_intent:
+                today = cn_today()
+                if str(row["daily_development_date"] or "") == today:
+                    summary += " 但今天已经完成过一次正式能力开发。"
+                    energy_delta -= 2
+                else:
+                    exp_delta = self._exp_with_trait_bonus(row, 50, "development")
+                    money_delta += self._income_with_level_bonus(15, row["power_level"])
+                    energy_delta -= 10
+                    mood_delta += 1
+                    development_mark = today
+                    summary += f" 并参加能力开发课程，获得 {exp_delta} 点能力经验。"
+            elif accepted and battle_intent:
+                exp_delta = self._exp_with_trait_bonus(row, 20, "battle")
+                energy_delta -= 14
+                hp_delta -= random.randint(2, 8)
+                summary += f" 随后进行了一次可控冲突训练，获得 {exp_delta} 点战斗经验。"
         elif self._looks_like_rest(text):
             summary = "你把这一轮用于休整，精力和心情略有恢复。"
             energy_delta = 12
@@ -791,6 +865,7 @@ class TextWorldService:
                 water_delta,
                 satiety_delta,
                 mood_delta,
+                death_protection_delta,
             ) = self._resolve_purchase(con, group_id, row)
         elif self._looks_like_heal(text):
             cost = min(int(row["money"]), 30)
@@ -803,9 +878,27 @@ class TextWorldService:
                 warnings.append("治疗失败：余额不足。")
         elif self._looks_like_work(text):
             gain = random.randint(8, 20)
-            money_delta = gain
+            money_delta = self._income_with_level_bonus(gain, row["power_level"])
             energy_delta = -14
-            summary = f"你做了些力所能及的事，获得 {gain} 学都币。"
+            summary = f"你做了些力所能及的事，获得 {money_delta} 学都币。"
+        elif development_intent:
+            today = cn_today()
+            if str(row["daily_development_date"] or "") == today:
+                summary = "你想参加能力开发课程，但今天已经完成过一次正式训练。"
+                energy_delta = -4
+                mood_delta = -1
+            else:
+                exp_delta = self._exp_with_trait_bonus(row, 50, "development")
+                money_delta = self._income_with_level_bonus(15, row["power_level"])
+                energy_delta = -18
+                mood_delta = 1
+                development_mark = today
+                summary = f"你参加了能力开发课程，获得 {exp_delta} 点能力经验和 {money_delta} 学都币。"
+        elif battle_intent:
+            exp_delta = self._exp_with_trait_bonus(row, 20, "battle")
+            energy_delta = -22
+            hp_delta -= random.randint(2, 8)
+            summary = f"你卷入了一次可控冲突训练，获得 {exp_delta} 点战斗经验。"
         if self._looks_like_ability_use(text):
             power_cost = self._power_use_cost(row["power_level"], text)
             energy_delta -= power_cost
@@ -829,17 +922,48 @@ class TextWorldService:
         new_satiety = clamp(int(row["satiety"]) + satiety_delta)
         new_mood = clamp(int(row["mood"]) + mood_delta)
         new_money = max(0, int(row["money"]) + money_delta)
+        new_exp = max(0, int(row["ability_exp"]) + exp_delta)
+        new_death_protection = max(0, int(row["death_protection"] or 0) + death_protection_delta)
         if new_water <= 15:
             new_energy = clamp(new_energy - 5)
             warnings.append("水分偏低，精力受到影响。")
         if new_satiety <= 15:
             new_mood = clamp(new_mood - 3)
             warnings.append("饱食度偏低，心情受到影响。")
+        if new_hp <= 0:
+            if new_death_protection > 0:
+                new_death_protection -= 1
+                new_hp = 1
+                warnings.append("死亡保护卡生效：本次免除能力经验惩罚，并保留 1 点生命。")
+            else:
+                penalty_exp = min(30, new_exp)
+                new_exp -= penalty_exp
+                if penalty_exp:
+                    warnings.append(f"濒死惩罚：能力经验 -{penalty_exp}。")
+                else:
+                    revive_cost = min(new_money, max(0, int(self._daily_income_estimate(row["power_level"]) * 0.6)))
+                    new_money -= revive_cost
+                    warnings.append(f"濒死惩罚：经验不足，支付复苏代价 {revive_cost} 学都币。")
+                new_hp = 1
         con.execute(
             """
-            UPDATE characters SET location_key=?,hp=?,energy=?,water=?,satiety=?,mood=?,money=?,updated_at=? WHERE id=?
+            UPDATE characters SET location_key=?,hp=?,energy=?,water=?,satiety=?,mood=?,money=?,ability_exp=?,death_protection=?,daily_development_date=CASE WHEN ?<>'' THEN ? ELSE daily_development_date END,updated_at=? WHERE id=?
             """,
-            (location_key, new_hp, new_energy, new_water, new_satiety, new_mood, new_money, utc_now_iso(), row["character_id"]),
+            (
+                location_key,
+                new_hp,
+                new_energy,
+                new_water,
+                new_satiety,
+                new_mood,
+                new_money,
+                new_exp,
+                new_death_protection,
+                development_mark,
+                development_mark,
+                utc_now_iso(),
+                row["character_id"],
+            ),
         )
         encounters = self._encounters(con, group_id, location_key, row["character_id"])
         self._small_relationship_changes(con, group_id, row["character_id"], encounters)
@@ -861,6 +985,8 @@ class TextWorldService:
                 "satiety": satiety_delta,
                 "mood": mood_delta,
                 "money": money_delta,
+                "exp": exp_delta,
+                "death_protection": death_protection_delta,
             },
         }
 
@@ -916,6 +1042,8 @@ class TextWorldService:
         rows = con.execute("SELECT * FROM npcs WHERE group_id=?", (group_id,)).fetchall()
         updates = []
         for npc in rows:
+            if self._is_static_or_restricted_npc(npc):
+                continue
             neighbors = con.execute(
                 "SELECT to_location_key FROM location_edges WHERE group_id=? AND from_location_key=?",
                 (group_id, npc["location_key"]),
@@ -929,6 +1057,21 @@ class TextWorldService:
             if old and new:
                 updates.append(f"{npc['name']}从{old['name']}去了{new['name']}")
         return updates
+
+    def _is_static_or_restricted_npc(self, npc: sqlite3.Row) -> bool:
+        disposition = str(npc["disposition"] or "")
+        faction = str(npc["faction"] or "")
+        role = str(npc["role"] or "")
+        restricted_words = ("禁区", "高危", "传闻", "危险")
+        if any(word in disposition for word in restricted_words):
+            return True
+        if "统括理事会" in faction or "木原一族" in faction:
+            return True
+        if "暗部" in faction:
+            return True
+        if "Level 5" in role and "御坂美琴" not in str(npc["name"] or "") and "食蜂操祈" not in str(npc["name"] or ""):
+            return True
+        return False
 
     def _consume_next_event(self, con: sqlite3.Connection, group_id: str) -> dict[str, Any] | None:
         row = con.execute(
@@ -1004,7 +1147,7 @@ class TextWorldService:
                 (hp, energy, water, satiety, mood, utc_now_iso(), char["id"]),
             )
 
-    def _resolve_purchase(self, con: sqlite3.Connection, group_id: str, row: sqlite3.Row) -> tuple[str, int, int, int, int, int, int]:
+    def _resolve_purchase(self, con: sqlite3.Connection, group_id: str, row: sqlite3.Row) -> tuple[str, int, int, int, int, int, int, int]:
         items = con.execute(
             "SELECT * FROM shop_items WHERE group_id=? AND is_active=1 ORDER BY length(name) DESC, price ASC",
             (group_id,),
@@ -1012,13 +1155,11 @@ class TextWorldService:
         text = str(row["text"])
         selected = self._select_purchase_item(items, text, int(row["money"]))
         if not selected:
-            selected = next((item for item in items if item["price"] <= row["money"] and int(item["stock"]) != 0), None)
-        if not selected:
-            return "你想买东西，但学都币不太够或商品已经售罄。", 0, 0, 0, -3, -2, 0
+            return "你想购买东西，但没说清楚要买什么。", 0, 0, 0, 0, 0, 0, 0
         if selected["price"] > row["money"]:
-            return f"你想购买{selected['name']}，但学都币不足。", 0, 0, 0, -3, -2, 0
+            return f"你想购买{selected['name']}，但学都币不足。", 0, 0, 0, -3, -2, 0, 0
         if int(selected["stock"]) == 0:
-            return f"你想购买{selected['name']}，但已经售罄。", 0, 0, 0, -3, -2, 0
+            return f"你想购买{selected['name']}，但已经售罄。", 0, 0, 0, -3, -2, 0, 0
         effect = loads(selected["effect_json"], {})
         if not isinstance(effect, dict):
             effect = {}
@@ -1036,6 +1177,7 @@ class TextWorldService:
         hp_delta = int_value(effect.get("hp"), 0)
         energy_delta = int_value(effect.get("energy"), 0)
         mood_delta = int_value(effect.get("mood"), 0)
+        death_protection_delta = max(0, int_value(effect.get("death_protection"), 0))
         return (
             f"你购买了{selected['name']}，花费 {selected['price']} 学都币，物品已放入背包。",
             -int(selected["price"]),
@@ -1044,21 +1186,50 @@ class TextWorldService:
             water_delta,
             satiety_delta,
             mood_delta,
+            death_protection_delta,
         )
 
     def _select_purchase_item(self, items: list[sqlite3.Row], text: str, money: int) -> sqlite3.Row | None:
-        lower_text = text.lower()
-        explicit_intents = ("买", "购买", "付款", "结账", "buy")
+        lower_text = self._normalize_purchase_text(text).lower()
+        explicit_intents = ("买", "购买", "拿取", "领取", "换取", "兑换", "补给", "付款", "结账", "buy")
         if any(word in text or word in lower_text for word in explicit_intents):
             for item in items:
-                if item["name"] in text:
+                if self._item_purchase_matches(item["name"], text):
+                    return item
+        travel_ticket_words = (
+            "地铁票",
+            "地下铁票",
+            "通勤票",
+            "通勤券",
+            "通勤一日券",
+            "地铁券",
+            "地下铁券",
+            "地铁一日券",
+            "地下铁一日券",
+            "一日券",
+            "车票",
+            "乘车券",
+        )
+        if any(word in text for word in travel_ticket_words):
+            hints = ("地下铁", "通勤", "一日券", "通行证", "车票")
+            candidates = [
+                item
+                for item in items
+                if int(item["stock"]) != 0
+                and int(item["price"]) <= money
+                and any(hint in item["name"] for hint in hints)
+            ]
+            if candidates:
+                return sorted(candidates, key=lambda item: self._purchase_item_score(item, hints))[0]
+        if self._purchase_item_mentioned_with_intent_text(text):
+            for item in items:
+                if int(item["stock"]) != 0 and int(item["price"]) <= money and self._item_purchase_matches(item["name"], text):
                     return item
 
         keyword_groups = (
             (self._purchase_intent_words("food"), ("便当", "套餐", "午餐", "折扣券")),
             (self._purchase_intent_words("water"), ("水", "饮料", "果冻")),
             (self._purchase_intent_words("heal"), ("绷带", "凝胶", "医疗")),
-            (self._purchase_intent_words("travel"), ("通勤", "地下铁", "一日券")),
             (self._purchase_intent_words("info"), ("书库", "检索", "资料卡", "点数")),
         )
         for triggers, name_hints in keyword_groups:
@@ -1084,6 +1255,24 @@ class TextWorldService:
         recovery = sum(int_value(effect.get(key), 0) for key in ("satiety", "water", "hp", "energy"))
         return (matched_hint, -recovery, int(item["price"]))
 
+    def _normalize_purchase_text(self, text: str) -> str:
+        text = str(text or "")
+        aliases = (
+            ("地铁一日券", "地下铁一日券"),
+            ("地铁票", "地下铁一日券"),
+            ("地铁券", "地下铁一日券"),
+            ("通勤一日券", "通勤一日券"),
+            ("通勤票", "通勤一日券"),
+        )
+        for source, target in aliases:
+            text = text.replace(source, target)
+        return text
+
+    def _item_purchase_matches(self, item_name: str, text: str) -> bool:
+        normalized_text = self._normalize_purchase_text(text)
+        normalized_name = self._normalize_purchase_text(item_name)
+        return normalized_name in normalized_text or item_name in normalized_text
+
     def _purchase_intent_words(self, category: str = "") -> tuple[str, ...]:
         groups = {
             "food": ("吃饭", "点餐", "用餐", "午餐", "晚餐", "早餐", "热餐", "便当", "套餐", "饿"),
@@ -1098,6 +1287,73 @@ class TextWorldService:
         for words in groups.values():
             merged.extend(words)
         return tuple(merged)
+
+    def _clean_traits_json(self, value: Any) -> str:
+        if isinstance(value, str):
+            parsed = loads(value, [])
+        else:
+            parsed = value
+        if not isinstance(parsed, list):
+            parsed = []
+        cleaned: list[dict[str, Any]] = []
+        for item in parsed[:12]:
+            if isinstance(item, str):
+                name = self.clean_text(item, 40)
+                if name:
+                    cleaned.append({"name": name})
+                continue
+            if not isinstance(item, dict):
+                continue
+            name = self.clean_text(str(item.get("name") or item.get("title") or ""), 40)
+            if not name:
+                continue
+            cleaned.append({
+                "name": name,
+                "type": self.clean_text(str(item.get("type") or ""), 30),
+                "bonus": max(0, min(100, int_value(item.get("bonus"), 0))),
+            })
+        return dumps(cleaned)
+
+    def _traits_text(self, raw: str) -> str:
+        traits = loads(str(raw or "[]"), [])
+        if not isinstance(traits, list) or not traits:
+            return "无"
+        names = []
+        for item in traits[:6]:
+            if isinstance(item, str):
+                names.append(item)
+            elif isinstance(item, dict):
+                bonus = int_value(item.get("bonus"), 0)
+                suffix = f"+{bonus}%" if bonus else ""
+                names.append(f"{item.get('name') or '未命名词条'}{suffix}")
+        return "、".join(names) if names else "无"
+
+    def _level_number(self, power_level: str) -> int:
+        match = re.search(r"(?:level|lv)\.?\s*([0-5])", str(power_level or ""), re.I)
+        return int(match.group(1)) if match else 3
+
+    def _next_level_exp(self, power_level: str) -> int:
+        thresholds = {0: 50, 1: 100, 2: 500, 3: 1500, 4: 5000, 5: 20000}
+        return thresholds.get(self._level_number(power_level), 1500)
+
+    def _income_with_level_bonus(self, amount: int, power_level: str) -> int:
+        level = self._level_number(power_level)
+        return int(round(max(0, amount) * (1 + level * 0.1)))
+
+    def _daily_income_estimate(self, power_level: str) -> int:
+        return self._income_with_level_bonus(70, power_level)
+
+    def _exp_with_trait_bonus(self, row: sqlite3.Row, amount: int, kind: str) -> int:
+        bonus = 0
+        traits = loads(str(row["traits_json"] or "[]"), [])
+        if isinstance(traits, list):
+            for item in traits:
+                if not isinstance(item, dict):
+                    continue
+                trait_type = str(item.get("type") or "")
+                if trait_type in {kind, "exp", "all"}:
+                    bonus += int_value(item.get("bonus"), 0)
+        return int(round(max(0, amount) * (1 + min(bonus, 200) / 100)))
 
     def _location(self, con: sqlite3.Connection, group_id: str, key: str) -> sqlite3.Row | None:
         return con.execute("SELECT * FROM locations WHERE group_id=? AND location_key=?", (group_id, key)).fetchone()
@@ -1183,10 +1439,21 @@ class TextWorldService:
         ).fetchall():
             results.append({"type": "player", "id": str(row["id"]), "name": row["game_name"]})
         for row in con.execute(
-            "SELECT npc_key,name FROM npcs WHERE group_id=? AND location_key=?",
+            "SELECT npc_key,name,role,faction,disposition,memory FROM npcs WHERE group_id=? AND location_key=?",
             (group_id, location_key),
         ).fetchall():
-            results.append({"type": "npc", "id": row["npc_key"], "name": row["name"]})
+            if self._is_static_or_restricted_npc(row):
+                continue
+            results.append(
+                {
+                    "type": "npc",
+                    "id": row["npc_key"],
+                    "name": row["name"],
+                    "role": row["role"],
+                    "disposition": row["disposition"],
+                    "memory": self.clean_text(row["memory"], 160),
+                }
+            )
         return results
 
     def _location_roster(self, con: sqlite3.Connection, group_id: str) -> dict[str, list[str]]:
@@ -1202,12 +1469,14 @@ class TextWorldService:
             roster[row["location_name"]].append(row["name"])
         for row in con.execute(
             """
-            SELECT locations.name AS location_name, npcs.name AS name
+            SELECT locations.name AS location_name, npcs.name AS name, npcs.role AS role, npcs.faction AS faction, npcs.disposition AS disposition
             FROM npcs JOIN locations ON locations.group_id=npcs.group_id AND locations.location_key=npcs.location_key
             WHERE npcs.group_id=?
             """,
             (group_id,),
         ).fetchall():
+            if self._is_static_or_restricted_npc(row):
+                continue
             roster[row["location_name"]].append(row["name"])
         return dict(roster)
 
@@ -1297,29 +1566,82 @@ class TextWorldService:
         return any(word in text.lower() for word in ("休息", "睡觉", "放松", "恢复", "躺", "自习", "rest", "sleep"))
 
     def _looks_like_buy(self, con: sqlite3.Connection, group_id: str, text: str) -> bool:
-        if any(word in text or word in text.lower() for word in ("买", "购买", "吃饭", "点餐", "用餐", "购物", "消费", "付款", "结账", "buy")):
+        if any(word in text or word in text.lower() for word in ("买", "购买", "拿", "拿取", "兑换", "补给", "吃饭", "点餐", "用餐", "购物", "消费", "付款", "结账", "buy")):
             return True
         broad_purchase_words = (
             *self._purchase_intent_words("food"),
             *self._purchase_intent_words("water"),
-            *self._purchase_intent_words("travel"),
         )
         if any(word in text for word in broad_purchase_words):
+            return True
+        travel_ticket_words = (
+            "地铁票",
+            "地下铁票",
+            "通勤票",
+            "通勤券",
+            "通勤一日券",
+            "地铁券",
+            "地下铁券",
+            "地铁一日券",
+            "地下铁一日券",
+            "车票",
+            "乘车券",
+        )
+        if any(word in text for word in travel_ticket_words):
             return True
         if self._purchase_item_mentioned_with_intent(con, group_id, text):
             return True
         return False
 
     def _purchase_item_mentioned_with_intent(self, con: sqlite3.Connection, group_id: str, text: str) -> bool:
-        if not any(word in text for word in ("要", "拿", "买", "购买", "兑换", "付款", "结账", "补充")):
+        if not self._purchase_item_mentioned_with_intent_text(text):
             return False
         return bool(con.execute(
             "SELECT 1 FROM shop_items WHERE group_id=? AND is_active=1 AND instr(?, name)>0 LIMIT 1",
-            (group_id, text),
+            (group_id, self._normalize_purchase_text(text)),
         ).fetchone())
+
+    def _purchase_item_mentioned_with_intent_text(self, text: str) -> bool:
+        return bool(
+            any(word in text for word in ("要", "买", "购买", "兑换", "补给", "付款", "结账", "补充"))
+            or re.search(r"(拿|取)(一|个|张|瓶|份|件|些|点)", text)
+            or "拿取" in text
+            or "领取" in text
+            or "换取" in text
+        )
 
     def _looks_like_work(self, text: str) -> bool:
         return any(word in text for word in ("兼职", "打工", "帮忙", "跑腿", "工作", "摆摊"))
+
+    def _looks_like_development(self, text: str) -> bool:
+        return any(
+            word in text
+            for word in (
+                "能力开发",
+                "能力训练",
+                "开发课程",
+                "能力测定",
+                "AIM测定",
+                "参加训练",
+                "训练能力",
+                "能力课程",
+            )
+        )
+
+    def _looks_like_battle(self, text: str) -> bool:
+        return any(
+            word in text
+            for word in (
+                "战斗训练",
+                "模拟战",
+                "切磋",
+                "对练",
+                "实战",
+                "冲突",
+                "迎战",
+                "战斗",
+            )
+        )
 
     def _looks_like_heal(self, text: str) -> bool:
         return any(word in text.lower() for word in ("医院", "治疗", "看病", "疗伤", "包扎", "hospital", "heal", "clinic", "doctor"))

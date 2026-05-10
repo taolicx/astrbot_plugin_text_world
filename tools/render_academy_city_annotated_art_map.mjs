@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const htmlPath = path.join(root, "docs", "map-guide", "academy-city-annotated-art-map.html");
 const outputDir = path.join(root, "docs", "map-guide");
+const pluginMapDir = path.join(root, "assets", "maps");
 
 const targets = [
   ["annotated-overview", "学园都市地图_美术详细标注版_总览.png"],
@@ -32,10 +34,18 @@ try {
   });
 
   for (const [id, filename] of targets) {
+    const outPath = path.join(outputDir, filename);
     await page.locator(`#${id}`).screenshot({
-      path: path.join(outputDir, filename),
+      path: outPath,
       animations: "disabled",
     });
+    fs.mkdirSync(pluginMapDir, { recursive: true });
+    if (filename === "学园都市地图_美术详细标注版_总览.png") {
+      fs.copyFileSync(outPath, path.join(pluginMapDir, "academy_city_overview_annotated.png"));
+    }
+    if (filename === "学园都市地图_美术详细标注版_第七学区.png") {
+      fs.copyFileSync(outPath, path.join(pluginMapDir, "academy_city_district7_annotated.png"));
+    }
     console.log(filename);
   }
 } finally {

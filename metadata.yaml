@@ -1,6 +1,6 @@
 name: astrbot_plugin_text_world
 display_name: 群文游文字世界
-version: 0.3.4
+version: 0.3.5
 description: 学院都市小时制群文游系统，支持世界书默认地图/NPC/事件/商店种子、群行动、统一结算、一次模型输出拆分、角色审核、增强前端后台、签到、NPC记忆基础和早八状态私聊。
 author: codex
 astrbot_version: ">=4.5.7"

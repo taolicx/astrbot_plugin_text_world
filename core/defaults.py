@@ -41,7 +41,7 @@ class DefaultEventPreset:
     effect: dict[str, Any] = field(default_factory=dict)
 
 
-CHARACTER_CARD_TEMPLATE = """创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级
+CHARACTER_CARD_TEMPLATE = """创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级 [| 穿衣着装 | 简易身材]
 
 也可以直接自然语言提交，例如：
 创建角色 我叫星野遥，是第七学区某高中学生兼风纪委员见习，能力是微弱电磁感应，Level 2。
@@ -52,10 +52,12 @@ CHARACTER_CARD_TEMPLATE = """创建角色 游戏名 | 身份 | 阵营 | 能力 |
 - 阵营：普通学生、风纪委员 Judgment、警备员 Anti-Skill、研究机构、Skill-Out、暗部边缘、留学生、魔法侧访客、无阵营等。
 - 能力：按学园都市“个人现实/AIM扩散力场”的超能力体系写清表现、限制和代价；通常一名能力者只有一种主能力。
 - 能力等级：Level 0 / Level 1 / Level 2 / Level 3 / Level 4。Level 5 属于学园都市仅七人的顶级超能力者，建议只允许管理员特批；Level 6/绝对能力者禁止创建。
+- 穿衣着装：常用制服、外套、标志性穿搭等，方便剧情描写。
+- 简易身材：身高、体型、发型等低敏外观数据，方便前端状态栏展示。
 - 注意：学舍之园、研究所、没有窗户的大楼、暗部核心事件都有权限边界，角色卡不能默认拥有自由出入或调动权限。
 
 示例：
-创建角色 星野遥 | 第七学区某高中学生，风纪委员见习 | 风纪委员 Judgment | 微弱电磁感应，可察觉近距离异常电流，连续使用会头痛 | Level 2
+创建角色 星野遥 | 第七学区某高中学生，风纪委员见习 | 风纪委员 Judgment | 微弱电磁感应，可察觉近距离异常电流，连续使用会头痛 | Level 2 | 常规学生制服 | 160cm，偏瘦，黑长发
 """
 
 
@@ -407,31 +409,31 @@ DEFAULT_NPCS: dict[str, DefaultNPC] = {
     "kamijou_touma": DefaultNPC(
         id="kamijou_touma",
         name="上条当麻",
-        role="第七学区某高中学生，右手寄宿着可消除异能之力的“幻想杀手”。",
+        role="第七学区某高中学生，Level 0，右手寄宿着可消除异能之力的“幻想杀手”。",
         faction="普通学生",
         location_id="classroom",
         disposition="热心",
-        memory="会卷入麻烦并帮助弱者，但不会替玩家解决所有问题；涉及魔法侧时只留下克制线索。",
+        memory="不幸但热心，危急时会救人；不能被玩家当作万能打手或魔法侧解题器，幻想杀手只在剧情许可范围内克制出现。",
         schedule_hint="上课日多在某高中、学生寮和家庭餐厅附近。",
     ),
     "misaka_mikoto": DefaultNPC(
         id="misaka_mikoto",
         name="御坂美琴",
-        role="常盘台中学学生，学园都市第三位 Level 5，能力名“超电磁炮”。",
+        role="常盘台中学二年级学生，学园都市第三位 Level 5，能力名“超电磁炮”。",
         faction="常盘台中学",
         location_id="tokiwa_dai",
         disposition="爽快",
-        memory="讨厌伤害无辜者的实验和事件，愿意帮忙处理公开层面的学生危机。",
+        memory="正义感强、好胜且喜欢呱太；会介入伤害无辜者的事件，但不会替玩家摧毁研究所或直接揭开核心黑幕。",
         schedule_hint="常在常盘台、Seventh Mist、栅川中学周边行动。",
     ),
     "judgment_support": DefaultNPC(
         id="judgment_support",
         name="初春饰利",
-        role="风纪委员支部的情报支援，擅长公开网络与书库终端检索。",
+        role="栅川中学学生，风纪委员第177支部情报支援，能力为低等级“定温保存”。",
         faction="风纪委员 Judgment",
         location_id="judgment_177",
         disposition="友好",
-        memory="会提醒玩家不要越权调查，也会提供公开情报、失物线索和支部委托。",
+        memory="擅长公开网络、书库终端和防御性情报支援；会提醒玩家不要越权调查，必要时给出失物、寻人和公开记录线索。",
     ),
     "judgment_teleporter": DefaultNPC(
         id="judgment_teleporter",
@@ -440,16 +442,16 @@ DEFAULT_NPCS: dict[str, DefaultNPC] = {
         faction="风纪委员 Judgment",
         location_id="judgment_177",
         disposition="严格",
-        memory="对违法行动非常敏感，认可守规矩的协助者；玩家不能借她的空间移动绕过地图路线。",
+        memory="正义感强、执行公务严格，崇拜御坂美琴；玩家不能借她的空间移动绕过地图路线或权限边界。",
     ),
     "saten_ruiko": DefaultNPC(
         id="saten_ruiko",
         name="佐天泪子",
-        role="栅川中学学生，Level 0，擅长收集学生间流传的都市传说。",
+        role="栅川中学学生，Level 0，都市传说与学生八卦收集者。",
         faction="普通学生",
         location_id="sakugawa",
         disposition="开朗",
-        memory="会把听来的传闻分享给可信玩家，但传闻真假需要自行判断。",
+        memory="好奇心强、行动力足，常把街头传闻分享给可信玩家；传闻真假需要玩家自行判断。",
     ),
     "anti_skill_teacher": DefaultNPC(
         id="anti_skill_teacher",
@@ -476,7 +478,7 @@ DEFAULT_NPCS: dict[str, DefaultNPC] = {
         faction="魔法侧访客",
         location_id="dorm",
         disposition="好奇",
-        memory="不主动讲出大量魔法知识；只在相关事件中给出非常有限的提示。",
+        memory="天真、虔诚且容易饥饿；不主动倾倒魔法知识，只在相关事件中给出有限提示或异常判断。",
     ),
     "komoe_teacher": DefaultNPC(
         id="komoe_teacher",
@@ -498,12 +500,12 @@ DEFAULT_NPCS: dict[str, DefaultNPC] = {
     ),
     "accelerator_rumor": DefaultNPC(
         id="accelerator_rumor",
-        name="一方通行的传闻",
-        role="学园都市第一位 Level 5 的行动传闻，不作为普通可驱使 NPC 使用。",
+        name="一方通行",
+        role="学园都市第一位 Level 5，能力名“矢量操作”，常以高风险传闻或远处痕迹出现。",
         faction="统括理事会/暗部边缘",
         location_id="windowless_building",
-        disposition="危险",
-        memory="只能作为高风险公共新闻、远处痕迹或官方噤声出现，不能被玩家随意召唤帮忙。",
+        disposition="传闻",
+        memory="以最后之作和妹妹们为软肋，危险等级极高；默认不作为可驱使 NPC，不能被玩家随意召唤帮忙。",
     ),
     "item_contact": DefaultNPC(
         id="item_contact",
@@ -568,6 +570,214 @@ DEFAULT_NPCS: dict[str, DefaultNPC] = {
         disposition="冷静",
         memory="关注天气、水源调度和异常观测记录。",
     ),
+    "shokuhou_misaki": DefaultNPC(
+        id="shokuhou_misaki",
+        name="食蜂操祈",
+        role="常盘台中学二年级学生，学园都市第五位 Level 5，能力名“心理掌握”。",
+        faction="常盘台中学/食蜂派阀",
+        location_id="tokiwa_dai",
+        disposition="优雅",
+        memory="常盘台最大派阀的女王，擅长精神干涉与信息遮蔽；对御坂美琴抱有警惕，不能让玩家借能力洗脑他人或跳过调查。",
+        schedule_hint="常在学舍之园、常盘台中学和派阀相关场合活动。",
+    ),
+    "sogiita_gunha": DefaultNPC(
+        id="sogiita_gunha",
+        name="削板军霸",
+        role="学园都市第七位 Level 5，最大级别原石，能力原理无法被完整解析。",
+        faction="无阵营",
+        location_id="district_20",
+        disposition="热血",
+        memory="重视爱与骨气，可能被公开求助吸引；适合救场、体育祭和大骚动边缘登场，不能成为玩家常驻战力。",
+    ),
+    "kakine_teitoku": DefaultNPC(
+        id="kakine_teitoku",
+        name="垣根帝督",
+        role="学园都市第二位 Level 5，能力名“未元物质”，暗部 SCHOOL 关联人物。",
+        faction="暗部 SCHOOL",
+        location_id="district_19",
+        disposition="高危",
+        memory="野心强且极度危险；只用于暗部高风险传闻、未元物质痕迹或管理员投放事件，不应普通偶遇。",
+    ),
+    "aihana_etsu": DefaultNPC(
+        id="aihana_etsu",
+        name="蓝花悦",
+        role="学园都市第六位 Level 5，真实身份和能力高度不明。",
+        faction="无阵营/传闻",
+        location_id="district_07",
+        disposition="传闻",
+        memory="只以身份借用、异常传闻或匿名帮助出现；不得直接公开能力真相，也不得让玩家获得第六位身份。",
+    ),
+    "aleister_crowley": DefaultNPC(
+        id="aleister_crowley",
+        name="亚雷斯塔·克劳利",
+        role="学园都市创立者与统括理事长，长期与没有窗户的大楼相关。",
+        faction="统括理事会",
+        location_id="windowless_building",
+        disposition="禁区",
+        memory="城市级幕后存在；默认只能作为滞空回线、行政压力、禁区传闻或管理员事件背景，不能被玩家面见或驱使。",
+    ),
+    "kongou_mitsuko": DefaultNPC(
+        id="kongou_mitsuko",
+        name="婚后光子",
+        role="常盘台中学二年级学生，航空业界名门继承人，Level 4空力使。",
+        faction="常盘台中学",
+        location_id="tokiwa_dai",
+        disposition="高傲友善",
+        memory="拿折扇、爱面子但本质善良，重视朋友；适合常盘台、学舍之园和社交活动事件。",
+    ),
+    "wanai_kinuho": DefaultNPC(
+        id="wanai_kinuho",
+        name="湾内绢保",
+        role="常盘台中学学生，游泳部成员，强能力者“水流操作”。",
+        faction="常盘台中学",
+        location_id="tokiwa_dai",
+        disposition="温柔",
+        memory="温柔守礼，常与泡浮万彬、婚后光子一起行动；适合水边、体育和常盘台日常剧情。",
+    ),
+    "awatsuki_maaya": DefaultNPC(
+        id="awatsuki_maaya",
+        name="泡浮万彬",
+        role="常盘台中学学生，游泳部成员，强能力者“流体反弹”。",
+        faction="常盘台中学",
+        location_id="tokiwa_dai",
+        disposition="腼腆",
+        memory="端庄体贴，常与湾内绢保形影不离；能力可配合水流和浮力，但不用于越权移动玩家。",
+    ),
+    "hokaze_junko": DefaultNPC(
+        id="hokaze_junko",
+        name="帆风润子",
+        role="常盘台中学三年级学生，食蜂派阀核心运营者，Level 4“天衣装着”。",
+        faction="常盘台中学/食蜂派阀",
+        location_id="tokiwa_dai",
+        disposition="可靠",
+        memory="单纯爽朗又有行动力，负责替食蜂派阀维持秩序；与御坂美琴、食蜂操祈之间可作为缓冲角色。",
+    ),
+    "kirifu_megumi": DefaultNPC(
+        id="kirifu_megumi",
+        name="切斑芽美",
+        role="常盘台中学学生，Level 4念动力能力者。",
+        faction="常盘台中学",
+        location_id="tokiwa_dai",
+        disposition="强势",
+        memory="自尊心强、口气强硬但遇到硬茬容易退缩；适合常盘台派阀、竞赛和低烈度冲突。",
+    ),
+    "tokiwadai_dorm_supervisor": DefaultNPC(
+        id="tokiwadai_dorm_supervisor",
+        name="常盘台舍监",
+        role="常盘台中学校外宿舍负责人，擅长对能力者战斗术和宿舍纪律管理。",
+        faction="常盘台中学",
+        location_id="gakusha_no_sono",
+        disposition="严厉",
+        memory="能压住御坂美琴和白井黑子的宿舍秩序；适合晚归、校规、宿舍巡查和处罚剧情。",
+    ),
+    "konori_mii": DefaultNPC(
+        id="konori_mii",
+        name="固法美伟",
+        role="风纪委员第177支部前辈，强能力者“透视能力”。",
+        faction="风纪委员 Judgment",
+        location_id="judgment_177",
+        disposition="稳重",
+        memory="成熟可靠，熟悉支部事务和街头治安；可给玩家公开委托、巡逻建议和低风险线索。",
+    ),
+    "yanagisako_aomi": DefaultNPC(
+        id="yanagisako_aomi",
+        name="柳迫碧美",
+        role="风纪委员第177支部成员，固法美伟的同学与室友。",
+        faction="风纪委员 Judgment",
+        location_id="judgment_177",
+        disposition="热心",
+        memory="关心他人的风纪委员前辈，偶尔随性；适合支部日常、寻人启事和轻量治安事件。",
+    ),
+    "kiyama_harumi": DefaultNPC(
+        id="kiyama_harumi",
+        name="木山春生",
+        role="大脑生理学与AIM扩散力场研究员，幻想御手事件关键人物。",
+        faction="研究机构",
+        location_id="lab",
+        disposition="疲惫",
+        memory="为救学生可变得偏激，但本质重视孩子；只给研究外围、AIM异常和幻想御手旧案线索。",
+    ),
+    "kihara_gensei": DefaultNPC(
+        id="kihara_gensei",
+        name="木原幻生",
+        role="木原一族元老级研究者，绝对能力进化相关高危人物。",
+        faction="木原一族/研究机构",
+        location_id="mizuho_pathology",
+        disposition="高危",
+        memory="疯狂科学家，不择手段；默认作为幕后压力、实验残痕或管理员指定事件出现，不能普通社交。",
+    ),
+    "nunotaba_shinobu": DefaultNPC(
+        id="nunotaba_shinobu",
+        name="布束砥信",
+        role="长点上机学园出身的天才研究员，克隆人与学习装置相关项目参与者。",
+        faction="研究机构",
+        location_id="s_processor",
+        disposition="冷静",
+        memory="理智冷淡但有赎罪感，可能暗中阻止非人道实验；适合妹妹计划边缘线索和研究所外围事件。",
+    ),
+    "kuriba_ryouko": DefaultNPC(
+        id="kuriba_ryouko",
+        name="操齿凉子",
+        role="第二十学区民间研究员，印第安扑克开发者，改造人技术相关人物。",
+        faction="研究机构",
+        location_id="district_20",
+        disposition="冷淡",
+        memory="不善交际、目标明确，研究动机与亲人有关；适合印第安扑克、梦境卡片和改造人异常线索。",
+    ),
+    "mugino_shizuri": DefaultNPC(
+        id="mugino_shizuri",
+        name="麦野沉利",
+        role="学园都市第四位 Level 5，能力名“原子崩坏”，暗部 ITEM 核心成员。",
+        faction="暗部 ITEM",
+        location_id="district_19",
+        disposition="高危",
+        memory="暴躁、强势且破坏力极高；只用于暗部任务边缘、危险传闻或管理员投放事件，不能普通驱使。",
+    ),
+    "kinuhata_saiai": DefaultNPC(
+        id="kinuhata_saiai",
+        name="绢旗最爱",
+        role="暗部 ITEM 成员，Level 4“氮气装甲”，黑暗的五月计划受试者。",
+        faction="暗部 ITEM",
+        location_id="district_19",
+        disposition="谨慎",
+        memory="说话常带“超”的口癖，重视同伴与电影；可作为暗部边缘目击、护送或误会冲突角色。",
+    ),
+    "takitsubo_rikou": DefaultNPC(
+        id="takitsubo_rikou",
+        name="泷壶理后",
+        role="暗部 ITEM 成员，Level 4“能力追踪”，可追踪特定 AIM 力场。",
+        faction="暗部 ITEM",
+        location_id="district_19",
+        disposition="安静",
+        memory="常显得昏昏欲睡，关心同伴；能力不能被玩家借来全图定位或追踪核心人物。",
+    ),
+    "frenda_seivelun": DefaultNPC(
+        id="frenda_seivelun",
+        name="芙兰达·塞维伦",
+        role="暗部 ITEM 关联成员，无能力者，擅长爆炸物和陷阱。",
+        faction="暗部 ITEM",
+        location_id="district_15",
+        disposition="狡黠",
+        memory="爱鲭鱼罐头，社交面很广；默认以超炮篇可用 NPC 处理，涉及后续生死状态由管理员事件决定。",
+    ),
+    "fremea_seivelun": DefaultNPC(
+        id="fremea_seivelun",
+        name="芙蕾梅亚·塞维伦",
+        role="芙兰达的妹妹，小学生，人力资源计划相关保护对象。",
+        faction="普通学生/暗部边缘",
+        location_id="district_13",
+        disposition="天真",
+        memory="孩子气且容易激发他人保护欲；只适合保护、寻人和公共骚动触发点，不能作为战斗工具。",
+    ),
+    "hamazura_shiage": DefaultNPC(
+        id="hamazura_shiage",
+        name="滨面仕上",
+        role="无能力者，曾与 Skill-Out 和暗部 ITEM 有关，擅长驾驶、机械和临场求生。",
+        faction="Skill-Out/暗部 ITEM",
+        location_id="district_19",
+        disposition="轻浮可靠",
+        memory="没被强大力量选中，却会为了保护同伴拼命；适合街头、逃亡、车辆和暗部边缘剧情。",
+    ),
 }
 
 
@@ -589,6 +799,12 @@ DEFAULT_SHOP_ITEMS = [
     DefaultShopItem("七福神商店街折扣券", "旧式商店街小店通用，可换取便当或日用品折扣。", 18, {"satiety": 12, "mood": 2}),
     DefaultShopItem("地下铁一日券", "二日站等交通节点可用，跨区移动前准备更省力。", 20, {"energy": 6, "mood": 1}),
     DefaultShopItem("书库公开检索点数", "只能查询公开权限资料，无法突破研究所或统括理事会权限。", 35, {"mood": 2}),
+    DefaultShopItem("定位卡", "一次性道具。行动中使用后可查询指定 NPC 当前所在地点，只给情报，不传送角色。", 100, {"item_type": "npc_locator"}),
+    DefaultShopItem("死亡保护卡", "一次性保险。角色濒死或死亡惩罚触发时优先消耗，免除本次经验惩罚。", 120, {"death_protection": 1}),
+    DefaultShopItem("能力重抽凭证", "管理员协助用凭证。可申请重新刷新能力类别，不改变当前等级和经验。", 320, {"admin_ticket": "reroll_ability"}),
+    DefaultShopItem("人设重置卡", "管理员协助用凭证。可申请重新整理身份和人设，不改变能力等级和经验。", 320, {"admin_ticket": "rewrite_profile"}),
+    DefaultShopItem("随机词条卡", "昂贵成长道具。管理员可根据奖池为角色添加一个小幅永久增益词条。", 520, {"trait_draw": 1}),
+    DefaultShopItem("词条置换卡", "高级成长道具。可请求管理员将已有词条重新抽取，通常三选一或保留原词条。", 420, {"trait_reroll": 1}),
 ]
 
 

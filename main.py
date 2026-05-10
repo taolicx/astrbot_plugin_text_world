@@ -19,7 +19,7 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.3.4"
+PLUGIN_VERSION = "0.3.5"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 MAP_IMAGE_FILES: tuple[str, ...] = (
@@ -77,8 +77,8 @@ def help_text() -> str:
         [
             "【学园都市文游】",
             "世界开启：在当前群登记世界",
-            "角色卡模板：查看完整创建格式",
-            "创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级：提交角色卡，需管理员审核",
+            "角色卡模板：查看完整创建格式，也可补充穿衣着装和简易身材",
+            "创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级 [| 穿衣着装 | 简易身材]：提交角色卡，需管理员审核",
             "创建角色 我叫星野遥，是第七学区某高中学生，能力是微弱电磁感应：也支持自然语言提交",
             "行动 内容：提交本小时行动",
             "状态：查看自己的状态栏",
@@ -86,6 +86,7 @@ def help_text() -> str:
             "待结算：查看本轮提交数量",
             "签到：每日获得学都币",
             "绑定文游私聊：私聊 bot 后绑定个人结果和早八状态栏",
+            "私聊中也可直接使用：状态 / 地图 / 待结算 / 签到",
             "世界开启后：群内普通聊天会被静默拦截，只回复文游指令",
             "管理员：世界结算 / 世界事件 / 世界后台",
         ]
@@ -173,6 +174,9 @@ class TextWorldPlugin(Star):
     @filter.command("绑定文游私聊", alias={"绑定世界私聊", "文游私聊绑定"})
     async def bind_private(self, event: AstrMessageEvent):
         count = await to_thread(self.service.bind_private, self._sender_id(event), self._origin(event))
+        if count == -1:
+            yield event.plain_result("检测到你在多个群世界里都有通过审核的角色，私聊里无法判断要绑定哪一个。请在对应群里只保留一个已审核角色后再试。").stop_event()
+            return
         if count <= 0:
             yield event.plain_result("还没有找到你的角色卡，请先在群里提交或让管理员绑定 QQ 号。").stop_event()
             return
@@ -320,6 +324,8 @@ class TextWorldPlugin(Star):
             faction=normalized["faction"],
             ability=normalized["ability"],
             power_level=normalized["power_level"],
+            outfit=normalized.get("outfit", ""),
+            body_profile=normalized.get("body_profile", ""),
         )
         if normalized.get("_source") == "natural":
             card_text = "\n".join(
@@ -330,6 +336,8 @@ class TextWorldPlugin(Star):
                     f"阵营：{normalized['faction']}",
                     f"能力：{normalized['ability']}",
                     f"能力等级：{normalized['power_level']}",
+                    f"穿衣着装：{normalized.get('outfit') or '未提取'}",
+                    f"简易身材：{normalized.get('body_profile') or '未提取'}",
                     msg,
                 ]
             )
@@ -337,15 +345,16 @@ class TextWorldPlugin(Star):
         return msg
 
     async def _parse_character_payload(self, payload: str, sender_id: str, provider_id: str) -> dict[str, str]:
-        parts = [part.strip() for part in payload.replace("｜", "|").split("|", 4)]
-        parts = [part for part in parts if part]
+        parts = [part.strip() for part in payload.replace("｜", "|").split("|", 6)]
         if len(parts) >= 2:
             return {
                 "game_name": parts[0],
                 "identity": parts[1],
                 "faction": parts[2] if len(parts) >= 3 else "",
                 "ability": parts[3] if len(parts) >= 4 else "",
-                "power_level": parts[4] if len(parts) >= 5 else "Level 0",
+                "power_level": parts[4] if len(parts) >= 5 else "Level 3",
+                "outfit": parts[5] if len(parts) >= 6 else "",
+                "body_profile": parts[6] if len(parts) >= 7 else "",
                 "_source": "structured",
             }
         if not self.cfg.enable_natural_character_card:
@@ -354,7 +363,9 @@ class TextWorldPlugin(Star):
                 "identity": "",
                 "faction": "",
                 "ability": "",
-                "power_level": "Level 0",
+                "power_level": "Level 3",
+                "outfit": "",
+                "body_profile": "",
                 "_source": "structured",
             }
         normalized = await self.narrator.normalize_character_card(payload, sender_id, provider_id)

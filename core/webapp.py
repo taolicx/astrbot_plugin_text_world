@@ -389,16 +389,21 @@ HTML = r"""<!doctype html>
                 <div><label for="charPassword">初始 / 重置密码</label><input id="charPassword" type="password" /></div>
                 <div><label for="charAudit">审核状态</label><select id="charAudit"><option value="approved">已通过</option><option value="pending">待审核</option><option value="rejected">已拒绝</option></select></div>
                 <div><label for="charLoc">位置 key</label><input id="charLoc" value="school_gate" /></div>
-                <div><label for="charPower">战斗力 / 能力等级</label><input id="charPower" value="Level 0" /></div>
+                <div><label for="charPower">能力名称-等级</label><input id="charPower" value="Level 3" /></div>
                 <div><label for="charFaction">阵营</label><input id="charFaction" /></div>
                 <div class="wide"><label for="charIdentity">身份设定</label><textarea id="charIdentity"></textarea></div>
                 <div class="wide"><label for="charAbility">能力设定</label><textarea id="charAbility"></textarea></div>
+                <div><label for="charOutfit">穿衣着装</label><input id="charOutfit" placeholder="例：常盘台制服、运动外套" /></div>
+                <div><label for="charBody">简易身材数据</label><input id="charBody" placeholder="例：165cm，偏瘦，短发" /></div>
+                <div><label for="charExp">能力经验</label><input id="charExp" type="number" min="0" value="0" /></div>
+                <div><label for="charProtect">死亡保护次数</label><input id="charProtect" type="number" min="0" value="0" /></div>
                 <div><label for="charHp">生命</label><input id="charHp" type="number" min="0" max="100" value="100" /></div>
                 <div><label for="charEnergy">精力</label><input id="charEnergy" type="number" min="0" max="100" value="100" /></div>
                 <div><label for="charWater">水分</label><input id="charWater" type="number" min="0" max="100" value="80" /></div>
                 <div><label for="charSatiety">饱食度</label><input id="charSatiety" type="number" min="0" max="100" value="80" /></div>
                 <div><label for="charMood">心情</label><input id="charMood" type="number" min="0" max="100" value="70" /></div>
                 <div><label for="charMoney">学都币</label><input id="charMoney" type="number" min="0" placeholder="留空使用默认值" /></div>
+                <div class="wide"><label for="charTraits">词条 JSON</label><textarea id="charTraits" placeholder='[{"name":"学习专注","type":"development","bonus":10}]'></textarea></div>
               </div>
               <div class="actions"><button id="saveCharacterBtn" type="button">保存角色</button></div>
               <div class="divider"></div>
@@ -759,7 +764,7 @@ function worldCard(w){
 }
 
 function renderCharacters(){
-  const chars = filtered(state.characters, ["group_id","qq_id","game_name","identity","faction","ability","power_level","audit_status"]);
+  const chars = filtered(state.characters, ["group_id","qq_id","game_name","identity","faction","ability","power_level","audit_status","outfit","body_profile"]);
   $("characterSub").textContent = isAdmin() ? `共 ${chars.length} 张角色卡` : `你的角色卡 ${chars.length} 张`;
   $("characters").innerHTML = chars.length ? chars.map(characterCard).join("") : empty("暂无角色");
 }
@@ -774,9 +779,14 @@ function characterCard(c){
       <span>身份</span><span>${esc(c.identity || "-")}</span>
       <span>阵营</span><span>${esc(c.faction || "-")}</span>
       <span>能力</span><span>${esc(c.ability || "-")}</span>
-      <span>战斗力</span><span>${esc(c.power_level || "Level 0")}</span>
+      <span>能力名称-等级</span><span>${esc((c.ability || "-") + " - " + (c.power_level || "Level 3"))}</span>
+      <span>能力经验</span><span>${esc(c.ability_exp || 0)} / ${esc(nextLevelExp(c.power_level))}</span>
+      <span>穿衣着装</span><span>${esc(c.outfit || "日常学生装/未详细设定")}</span>
+      <span>简易身材</span><span>${esc(c.body_profile || "未详细设定")}</span>
       <span>位置</span><span>${esc(c.location_key || "-")}</span>
       <span>货币</span><span>${esc(c.money)} 学都币</span>
+      <span>保护</span><span>${esc(c.death_protection || 0)} 次</span>
+      <span>词条</span><span>${esc(traitText(c.traits_json))}</span>
     </div>
     <div class="divider"></div>
     ${meter("生命", c.hp)}
@@ -800,6 +810,27 @@ function meter(label, value){
   return `<div class="muted">${esc(label)} ${n}/100</div><div class="progress ${tone}"><span style="width:${n}%"></span></div>`;
 }
 
+function levelNumber(powerLevel){
+  const m = String(powerLevel || "").match(/(?:level|lv)\.?\s*([0-5])/i);
+  return m ? Number(m[1]) : 3;
+}
+
+function nextLevelExp(powerLevel){
+  return ({0:50,1:100,2:500,3:1500,4:5000,5:20000})[levelNumber(powerLevel)] || 1500;
+}
+
+function traitText(raw){
+  let traits = [];
+  try{ traits = typeof raw === "string" ? JSON.parse(raw || "[]") : raw; }
+  catch{ traits = []; }
+  if(!Array.isArray(traits) || !traits.length) return "无";
+  return traits.slice(0, 6).map(item => {
+    if(typeof item === "string") return item;
+    const bonus = Number(item.bonus || 0);
+    return `${item.name || "未命名词条"}${bonus ? "+" + bonus + "%" : ""}`;
+  }).join("、") || "无";
+}
+
 function fillCharacter(id){
   const c = (state.characters || []).find(item => Number(item.id) === Number(id));
   if(!c) return;
@@ -809,10 +840,15 @@ function fillCharacter(id){
   $("charPassword").value = "";
   $("charAudit").value = c.audit_status || "pending";
   $("charLoc").value = c.location_key || "school_gate";
-  $("charPower").value = c.power_level || "Level 0";
+  $("charPower").value = c.power_level || "Level 3";
   $("charFaction").value = c.faction || "";
   $("charIdentity").value = c.identity || "";
   $("charAbility").value = c.ability || "";
+  $("charOutfit").value = c.outfit || "";
+  $("charBody").value = c.body_profile || "";
+  $("charExp").value = c.ability_exp ?? 0;
+  $("charProtect").value = c.death_protection ?? 0;
+  $("charTraits").value = normalizeJson(c.traits_json || "[]");
   $("charHp").value = c.hp ?? 100;
   $("charEnergy").value = c.energy ?? 100;
   $("charWater").value = c.water ?? 80;
@@ -825,12 +861,15 @@ function fillCharacter(id){
 }
 
 function clearCharacterForm(){
-  for(const id of ["charQq","charName","charPassword","charFaction","charIdentity","charAbility","charMoney"]){
+  for(const id of ["charQq","charName","charPassword","charFaction","charIdentity","charAbility","charOutfit","charBody","charMoney"]){
     $(id).value = "";
   }
   $("charAudit").value = "approved";
   $("charLoc").value = "school_gate";
-  $("charPower").value = "Level 0";
+  $("charPower").value = "Level 3";
+  $("charExp").value = 0;
+  $("charProtect").value = 0;
+  $("charTraits").value = "";
   $("charHp").value = 100;
   $("charEnergy").value = 100;
   $("charWater").value = 80;
@@ -839,6 +878,11 @@ function clearCharacterForm(){
 }
 
 async function saveCharacter(){
+  let traits = [];
+  if($("charTraits").value.trim()){
+    try{ traits = JSON.parse($("charTraits").value); }
+    catch{ showToast("词条 JSON 格式错误", "error"); return; }
+  }
   const payload = {
     group_id:$("charGroup").value.trim(),
     qq_id:$("charQq").value.trim(),
@@ -848,6 +892,11 @@ async function saveCharacter(){
     faction:$("charFaction").value,
     ability:$("charAbility").value,
     power_level:$("charPower").value,
+    outfit:$("charOutfit").value,
+    body_profile:$("charBody").value,
+    ability_exp:Number($("charExp").value),
+    death_protection:Number($("charProtect").value),
+    traits_json:traits,
     audit_status:$("charAudit").value,
     location_key:$("charLoc").value.trim() || "school_gate",
     hp:Number($("charHp").value),
@@ -975,7 +1024,7 @@ async function saveShop(){
 }
 
 function renderNpcs(){
-  const npcs = filtered(state.npcs, ["group_id","npc_key","name","role","faction","location_key","disposition"]);
+  const npcs = filtered(state.npcs, ["group_id","npc_key","name","role","faction","location_key","disposition","memory"]);
   $("npcSub").textContent = `当前可见 ${npcs.length} 个 NPC`;
   $("npcs").innerHTML = npcs.length ? npcs.map(npcCard).join("") : empty("暂无 NPC");
 }
@@ -1025,6 +1074,7 @@ function npcCard(n){
       <span>身份</span><span>${esc(n.role || "-")}</span>
       <span>阵营</span><span>${esc(n.faction || "-")}</span>
       <span>位置</span><span>${esc(n.location_key || "-")}</span>
+      <span>设定记忆</span><span>${esc(n.memory || "-")}</span>
     </div>
   </article>`;
 }

@@ -237,12 +237,14 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 24px;
+      align-items: start;
     }
 
     .grid-3 {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 20px;
+      align-items: start;
     }
 
     .panel {
@@ -354,11 +356,22 @@
       font-size: 22px;
     }
 
-    .cmd-row span {
+  .cmd-row span {
       color: #e8f2ff;
       font-size: 22px;
       line-height: 1.36;
       font-weight: 700;
+    }
+
+    .cmd-detail {
+      margin-top: 8px;
+      padding: 12px 14px;
+      border: 1px solid rgba(117, 229, 255, 0.16);
+      background: rgba(5, 16, 28, 0.56);
+      color: #dfefff;
+      font-size: 19px;
+      line-height: 1.42;
+      font-weight: 560;
     }
 
     .example {
@@ -422,6 +435,32 @@
       font-size: 24px;
       line-height: 1.44;
       font-weight: 700;
+    }
+
+    .wide-note {
+      margin-top: 18px;
+      padding: 20px;
+      border: 1px solid rgba(255, 210, 125, 0.24);
+      background: rgba(255, 210, 125, 0.08);
+      color: #ffe9bb;
+      font-size: 20px;
+      line-height: 1.45;
+      font-weight: 650;
+    }
+
+    .image-frame {
+      overflow: hidden;
+      border: 1px solid rgba(117, 229, 255, 0.18);
+      border-radius: 8px;
+      background: rgba(5, 16, 28, 0.82);
+    }
+
+    .image-frame img {
+      display: block;
+      width: 100%;
+      height: 320px;
+      object-fit: cover;
+      object-position: center top;
     }
 
     .accent-cyan {
@@ -557,6 +596,7 @@
     <section class="section">
       <div class="section-title"><span class="num">04</span>常用指令速查</div>
       <div class="cmd-list">
+        <div class="cmd-row"><b>开启</b><span>世界开启 / 开启世界 / 文游开启</span></div>
         <div class="cmd-row"><b>帮助</b><span>世界帮助 / 文游帮助 / 世界菜单</span></div>
         <div class="cmd-row"><b>模板</b><span>角色卡模板 / 角色模板 / 创建格式</span></div>
         <div class="cmd-row"><b>创建</b><span>创建角色 / 角色创建 / 创建人物</span></div>
@@ -566,11 +606,94 @@
         <div class="cmd-row"><b>本轮</b><span>待结算 / 本轮行动 / 行动列表</span></div>
         <div class="cmd-row"><b>签到</b><span>签到 / 每日签到</span></div>
         <div class="cmd-row"><b>私聊</b><span>绑定文游私聊 / 绑定世界私聊 / 文游私聊绑定</span></div>
+        <div class="cmd-row"><b>管理</b><span>世界结算 / 世界事件 / 世界后台</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title"><span class="num">04</span>所有指令详细版</div>
+      <div class="grid-2">
+        <div class="panel strong">
+          <h3>玩家指令详细说明</h3>
+          <div class="cmd-row"><b>世界开启</b><span>只在群里使用，开启后该群进入文游模式。</span></div>
+          <div class="cmd-detail">作用：登记当前群为文游世界。开启后，群内普通聊天会被静默拦截，只回复文游指令。</div>
+          <div class="cmd-row"><b>角色卡模板</b><span>查看标准角色格式。</span></div>
+          <div class="cmd-detail">作用：给新玩家看创建角色的标准写法，避免字段乱写。</div>
+          <div class="cmd-row"><b>创建角色</b><span>提交角色卡，支持标准格式和自然语言。</span></div>
+          <div class="cmd-detail">作用：创建或更新你的角色。建议写清游戏名、身份、阵营、能力、能力等级，也可以补穿衣着装和简易身材。</div>
+          <div class="cmd-row"><b>行动</b><span>每小时提交一次本轮行动。</span></div>
+          <div class="cmd-detail">作用：写清地点、目标和方式。系统会按地图路线和世界规则结算，不会允许瞬移或超范围移动。</div>
+          <div class="cmd-row"><b>状态</b><span>查看自己的状态栏。</span></div>
+          <div class="cmd-detail">作用：查看生命、精力、水分、饱食度、心情、学都币、能力经验、死亡保护、词条、背包等。</div>
+          <div class="cmd-row"><b>地图</b><span>查看当前世界地图。</span></div>
+          <div class="cmd-detail">作用：看你当前所在地点、能前往哪些地方，以及第七学区路线参考。</div>
+          <div class="cmd-row"><b>待结算</b><span>查看本轮提交情况。</span></div>
+          <div class="cmd-detail">作用：看当前轮次、已提交人数、已审核角色数和下次结算时间。</div>
+        </div>
+        <div class="panel strong">
+          <h3>私聊 / 管理员指令详细说明</h3>
+          <div class="cmd-row"><b>签到</b><span>每日领取学都币。</span></div>
+          <div class="cmd-detail">作用：每天签到一次，获得日常收入；私聊和群聊都可用，但前提是已经绑定到对应世界。</div>
+          <div class="cmd-row"><b>绑定文游私聊</b><span>把私聊与群世界绑定。</span></div>
+          <div class="cmd-detail">作用：让私聊能收到个人结果和每天 8 点状态栏。如果同 QQ 有多个世界角色，会提示歧义，需要先整理。</div>
+          <div class="cmd-row"><b>世界结算</b><span>管理员手动结算当前群。</span></div>
+          <div class="cmd-detail">作用：强制触发一次当前轮结算，适合活动后补结、测试和管理员控制节奏。</div>
+          <div class="cmd-row"><b>世界事件</b><span>管理员手动触发事件。</span></div>
+          <div class="cmd-detail">作用：把预设事件加入下一轮或立即触发，用于剧情推进和公共骚动。</div>
+          <div class="cmd-row"><b>世界后台</b><span>打开网页版管理后台。</span></div>
+          <div class="cmd-detail">作用：进入角色审核、事件、商店、地图、NPC、历史、世界书和模型路由页面。</div>
+          <div class="wide-note">补充说明：创建角色当前默认按 Lv3 起步整理；如果你明确写了更低或更高等级，系统会按你写的等级和审核结果处理。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title"><span class="num">05</span>系统规则和后台</div>
+      <div class="grid-3">
+        <div class="panel">
+          <h3>运行节奏</h3>
+          <p>每小时结算一次行动；每两小时触发公共事件；每天早上 8 点私聊状态栏。</p>
+        </div>
+        <div class="panel">
+          <h3>个人状态</h3>
+          <p>生命、精力、水分、饱食度、心情、学都币、背包、好感度、阵营都会影响玩法。</p>
+        </div>
+        <div class="panel">
+          <h3>后台页签</h3>
+          <p>总览、角色、事件、商店、地图、NPC、历史、世界书、模型路由。</p>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top: 24px;">
+        <div class="panel strong">
+          <h3>管理员做什么</h3>
+          <div class="example">审核 / 编辑角色卡，设置位置和状态，添加预设事件，把事件加入下一轮，维护商店商品和库存，查看世界历史。</div>
+        </div>
+        <div class="panel strong">
+          <h3>私聊和群聊</h3>
+          <div class="example">群里看公共世界变化；私聊收个人结果、状态栏、地图、本轮和签到。别人的私聊结果不会直接发给你。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title"><span class="num">06</span>世界书、地图和模型路由</div>
+      <div class="grid-2">
+        <div class="panel strong">
+          <h3>地图硬约束</h3>
+          <div class="image-frame"><img src="../map-guide/学园都市地图_美术详细标注版_总览.png" alt="学园都市地图总览"></div>
+          <div class="example">移动要符合地点连接；目标不在可达路线中时，本轮会被拦回原地。</div>
+        </div>
+        <div class="panel strong">
+          <h3>模型路由</h3>
+          <div class="example">主模型：Claude 4.6o；剧情模型：DeepSeek v4 Pro；快速模型：DeepSeek v4 Flash。</div>
+          <div class="example">结算润色优先走剧情模型；自然语言角色卡整理优先走快速模型；失败会自动回退。</div>
+          <div class="example warning">想省消耗可调低 `worldbook_prompt_chars`，或关闭 `enable_llm` / `enable_ai_private_result`。</div>
+        </div>
       </div>
     </section>
 
     <div class="footer-note">
-      最短开玩路线：<span class="accent-cyan">角色卡模板</span> → <span class="accent-cyan">创建角色</span> → 私聊 <span class="accent-cyan">绑定文游私聊</span> → <span class="accent-cyan">地图</span> → <span class="accent-cyan">行动</span>。
+      最短开玩路线：<span class="accent-cyan">世界开启</span> → <span class="accent-cyan">角色卡模板</span> → <span class="accent-cyan">创建角色</span> → 私聊 <span class="accent-cyan">绑定文游私聊</span> → <span class="accent-cyan">地图</span> → <span class="accent-cyan">行动</span>。
     </div>
   </article>
 
@@ -648,24 +771,119 @@
   <article id="card-commands" class="sheet card-sheet">
     <div class="topline">
       <div class="brand"><span class="seal">04</span><span>指令速查</span></div>
-      <div class="tag">玩家常用</div>
+      <div class="tag">玩家 / 私聊 / 管理员</div>
     </div>
     <h1>想做什么<br>就发什么</h1>
-    <p class="subtitle">下面都是玩家会用到的指令。斜杠不用打，直接发中文。</p>
+    <p class="subtitle">下面把玩家、私聊、管理员会用到的指令一次列全。斜杠不用打，直接发中文。</p>
     <section class="section">
-      <div class="cmd-list">
-        <div class="cmd-row"><b>帮助</b><span>世界帮助 / 文游帮助 / 世界菜单</span></div>
-        <div class="cmd-row"><b>模板</b><span>角色卡模板 / 角色模板 / 创建格式</span></div>
-        <div class="cmd-row"><b>创建</b><span>创建角色 / 角色创建 / 创建人物</span></div>
-        <div class="cmd-row"><b>行动</b><span>行动 / 文游行动 / 提交行动</span></div>
-        <div class="cmd-row"><b>状态</b><span>状态 / 我的状态 / 状态栏</span></div>
-        <div class="cmd-row"><b>地图</b><span>地图 / 世界地图</span></div>
-        <div class="cmd-row"><b>本轮</b><span>待结算 / 本轮行动 / 行动列表</span></div>
-        <div class="cmd-row"><b>签到</b><span>签到 / 每日签到</span></div>
-        <div class="cmd-row"><b>私聊</b><span>绑定文游私聊 / 绑定世界私聊 / 文游私聊绑定</span></div>
+      <div class="grid-2">
+        <div class="panel strong">
+          <h3>玩家指令</h3>
+          <div class="cmd-list">
+            <div class="cmd-row"><b>开启</b><span>世界开启 / 开启世界 / 文游开启（群聊使用，开局后群内普通聊天会静默）</span></div>
+            <div class="cmd-row"><b>帮助</b><span>世界帮助 / 文游帮助 / 世界菜单</span></div>
+            <div class="cmd-row"><b>模板</b><span>角色卡模板 / 角色模板 / 创建格式</span></div>
+            <div class="cmd-row"><b>创建</b><span>创建角色 / 角色创建 / 创建人物；也支持自然语言输入</span></div>
+            <div class="cmd-row"><b>行动</b><span>行动 / 文游行动 / 提交行动；每小时只能交 1 条</span></div>
+            <div class="cmd-row"><b>状态</b><span>状态 / 我的状态 / 状态栏</span></div>
+            <div class="cmd-row"><b>地图</b><span>地图 / 世界地图</span></div>
+            <div class="cmd-row"><b>本轮</b><span>待结算 / 本轮行动 / 行动列表</span></div>
+            <div class="cmd-row"><b>签到</b><span>签到 / 每日签到</span></div>
+            <div class="cmd-row"><b>私聊</b><span>绑定文游私聊 / 绑定世界私聊 / 文游私聊绑定（私聊先绑定，再看个人结果）</span></div>
+          </div>
+        </div>
+        <div class="panel strong">
+          <h3>管理员指令</h3>
+          <div class="cmd-list">
+            <div class="cmd-row"><b>结算</b><span>世界结算 / 文游结算 / 立即结算</span></div>
+            <div class="cmd-row"><b>事件</b><span>世界事件 / 文游事件 / 触发事件</span></div>
+            <div class="cmd-row"><b>后台</b><span>世界后台 / 文游后台</span></div>
+          </div>
+          <div class="example" style="margin-top: 16px;">管理员主要负责开世界、看后台、加事件、手动结算和审核角色卡。玩家侧只看自己的状态、地图、本轮和私聊结果。</div>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top: 22px;">
+        <div class="panel">
+          <h3>私聊规则</h3>
+          <div class="example">绑定后可在私聊查状态、地图、待结算和签到；个人结果和每天早上 8 点的状态栏也会单独私聊发送给你。</div>
+          <div class="example warning">如果同一个 QQ 在多个群世界里都有角色，私聊绑定时会提示歧义，要先回到对应群里处理。</div>
+        </div>
+        <div class="panel">
+          <h3>一眼记住</h3>
+          <div class="example">世界开启后，群内普通聊天静默，只回复文游指令。</div>
+          <div class="example">创建角色支持自然语言，系统会先整理成标准卡再进审核。</div>
+        </div>
       </div>
     </section>
-    <div class="footer-note">最短流程：角色卡模板 → 创建角色 → 私聊绑定文游私聊 → 地图 → 行动。</div>
+    <div class="footer-note">最短流程：世界开启 → 角色卡模板 → 创建角色 → 私聊绑定文游私聊 → 地图 → 行动。</div>
+  </article>
+
+  <article id="card-system" class="sheet card-sheet">
+    <div class="topline">
+      <div class="brand"><span class="seal">05</span><span>系统规则 / 后台 / 世界书</span></div>
+      <div class="tag">把运行逻辑一次看懂</div>
+    </div>
+    <h1>系统怎么跑<br>后台怎么看</h1>
+    <p class="subtitle">这页讲的是“系统本身怎么运转”：每小时结算、每两小时公共事件、每天早上 8 点私聊状态栏、后台页签、模型路由、世界书和地图约束。</p>
+    <section class="section">
+      <div class="grid-3">
+        <div class="panel strong">
+          <h3>结算节奏</h3>
+          <p>每小时结算一次行动。</p>
+          <p>每两小时一次公共事件。</p>
+          <p>每天早上 8 点发私聊状态栏。</p>
+        </div>
+        <div class="panel strong">
+          <h3>角色与资源</h3>
+          <p>生命、精力、水分、饱食度、心情、学都币、背包、好感度、阵营一起跑。</p>
+        </div>
+        <div class="panel strong">
+          <h3>硬规则</h3>
+          <p>角色卡先审核；每人每小时 1 条行动；地图按路线走，不能瞬移；受伤后可以去医院。</p>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top: 24px;">
+        <div class="panel strong">
+          <h3>后台页签</h3>
+          <div class="cmd-list">
+            <div class="cmd-row"><b>总览</b><span>世界数量、角色数量、待审核、下轮事件、商品和历史 KPI。</span></div>
+            <div class="cmd-row"><b>角色</b><span>审核 / 编辑角色卡，玩家看自己的状态。</span></div>
+            <div class="cmd-row"><b>事件</b><span>添加预设事件，并可加入下一轮结算。</span></div>
+            <div class="cmd-row"><b>商店</b><span>添加商品、库存和效果 JSON。</span></div>
+            <div class="cmd-row"><b>NPC</b><span>查看当前身份、阵营、位置和态度。</span></div>
+            <div class="cmd-row"><b>历史</b><span>查看公共 / 私聊历史记录。</span></div>
+            <div class="cmd-row"><b>世界书</b><span>查看是否接入、文件大小、注入字符数和预览。</span></div>
+            <div class="cmd-row"><b>模型路由</b><span>主 / 剧情 / 快速 provider 的配置和回退结果。</span></div>
+          </div>
+        </div>
+        <div class="panel strong">
+          <h3>模型路由</h3>
+          <div class="example">主模型：Claude 4.6o，负责默认高质量任务和复杂判断。</div>
+          <div class="example">剧情模型：DeepSeek v4 Pro，优先负责每小时结算、公共公告和私聊润色。</div>
+          <div class="example">快速模型：DeepSeek v4 Flash，处理角色卡整理、摘要、反作弊和轻量判断等低延迟任务。</div>
+          <div class="example">回退顺序：剧情 = story → main → 群默认 provider → default；快速 = fast → main → 群默认 provider → default。</div>
+          <div class="example warning">如果你想省消耗，可以关 `enable_llm`，或者只关 `enable_ai_private_result`，让私聊结果固定走程序模板。</div>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top: 24px;">
+        <div class="panel strong">
+          <h3>地图与移动</h3>
+          <div class="image-frame"><img src="../map-guide/学园都市地图_美术详细标注版_总览.png" alt="学园都市地图总览"></div>
+          <div class="example">地图负责硬约束：玩家不能瞬移，移动要符合地点连接；如果目标不在路线里，本轮会被拦回原地。</div>
+        </div>
+        <div class="panel strong">
+          <h3>世界书与反作弊</h3>
+          <div class="example">世界书默认是 `worldbook/academy_city_worldbook.txt`，通过 `worldbook_prompt_chars` 节选注入，默认不整本塞给模型，避免 token 爆炸。</div>
+          <div class="example">反作弊会拦高风险设定和异常收益，能力等级默认不建议超过 Level 5。</div>
+          <div class="example">世界开启后，群内普通聊天静默，只回复文游指令；个人结果和早八状态优先私聊发送。</div>
+          <div class="example">如果需要更省 token，可以把 `worldbook_prompt_chars` 调到 4000 - 8000 之间测试。</div>
+        </div>
+      </div>
+      <div class="tips">
+        <div class="tip">群里看公共世界变化，私聊看个人结果。别人的私聊结果不会直接回到你这里。</div>
+        <div class="tip">这套系统是“程序硬规则 + 大模型润色”混合跑法，不是纯聊天机器人。</div>
+      </div>
+    </section>
   </article>
 </body>
 </html>
