@@ -215,7 +215,7 @@ class TextWorldService:
                 return False, "你还没有角色卡。请先发送：角色卡模板，然后按格式提交。"
             if character["audit_status"] != "approved":
                 return False, "你的角色卡还没有通过审核，暂时不能行动。"
-            if int(character["hp"]) <= 0 and not (self._looks_like_heal(text) or self._looks_like_rest(text)):
+            if int(character["hp"]) <= 0 and not (self._looks_like_self_heal(text) or self._looks_like_rest(text)):
                 return False, "你的生命值过低，本轮只能休息或去医院治疗。"
             exists = con.execute(
                 "SELECT id FROM actions WHERE group_id=? AND character_id=? AND round_no=?",
@@ -281,13 +281,39 @@ class TextWorldService:
             ).fetchall()
 
             outcomes = []
+            action_rows = [dict(row) for row in actions]
+            pvp_index, passive_pvp_index = self._build_pvp_index(con, group_id, action_rows)
             for row in actions:
-                outcomes.append(self._resolve_action(con, group_id, row))
+                outcomes.append(self._resolve_action(con, group_id, row, pvp_index.get(int(row["id"]), [])))
+            active_actions_by_character = {int(row["character_id"]): row for row in action_rows}
+            passive_pvp_index = {
+                int(character_id): [
+                    attack
+                    for attack in attacks
+                    if not self._passive_pvp_already_answered(active_actions_by_character.get(int(character_id)), attack)
+                ]
+                for character_id, attacks in passive_pvp_index.items()
+            }
+            passive_pvp_index = {character_id: attacks for character_id, attacks in passive_pvp_index.items() if attacks}
+            passive_outcomes = self._resolve_passive_pvp_impacts(con, group_id, passive_pvp_index)
+            passive_outcomes.extend(self._resolve_active_social_impacts(con, group_id, action_rows))
 
             self._apply_hourly_decay(con, group_id)
             roster = self._location_roster(con, group_id)
             public_summary = self._build_public_summary(round_no, outcomes, npc_updates, roster, active_event)
             private_results = {}
+            outcome_by_character = {int(outcome["character_id"]): outcome for outcome in outcomes}
+            for passive in passive_outcomes:
+                existing = outcome_by_character.get(int(passive["character_id"]))
+                if existing:
+                    for key, value in passive.get("deltas", {}).items():
+                        existing.setdefault("deltas", {})[key] = int(existing["deltas"].get(key, 0)) + int(value or 0)
+                    existing.setdefault("warnings", []).extend(passive.get("warnings", []))
+                    impacts = passive.get("passive_impacts") or [{"summary": passive.get("summary", "")}]
+                    existing.setdefault("passive_impacts", []).extend(impact for impact in impacts if impact.get("summary"))
+                else:
+                    outcomes.append(passive)
+                    outcome_by_character[int(passive["character_id"])] = passive
             for outcome in outcomes:
                 private_text = self._build_private_result(con, group_id, round_no, outcome)
                 private_results[str(outcome["qq_id"])] = private_text
@@ -298,10 +324,11 @@ class TextWorldService:
                     """,
                     (group_id, round_no, "private", outcome["character_id"], "round_result", private_text, utc_now_iso()),
                 )
-                con.execute(
-                    "UPDATE actions SET status='resolved', result_text=?, warnings=?, resolved_at=? WHERE id=?",
-                    (private_text, dumps(outcome.get("warnings", [])), utc_now_iso(), outcome["action_id"]),
-                )
+                if outcome.get("action_id"):
+                    con.execute(
+                        "UPDATE actions SET status='resolved', result_text=?, warnings=?, resolved_at=? WHERE id=?",
+                        (private_text, dumps(outcome.get("warnings", [])), utc_now_iso(), outcome["action_id"]),
+                    )
             con.execute(
                 """
                 INSERT INTO history(group_id,round_no,visibility,kind,text,created_at)
@@ -798,7 +825,13 @@ class TextWorldService:
             ]
         )
 
-    def _resolve_action(self, con: sqlite3.Connection, group_id: str, row: sqlite3.Row) -> dict[str, Any]:
+    def _resolve_action(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        row: sqlite3.Row,
+        pvp_targets: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         warnings: list[str] = []
         text = str(row["text"])
         old_location = self._location(con, group_id, row["location_key"])
@@ -817,9 +850,33 @@ class TextWorldService:
         location_key = row["location_key"]
         summary = "你的行动被记录并执行，具体细节会在本轮剧情里展开。"
         accepted = True
+        pvp_targets = pvp_targets or []
+        pvp_intent = self._looks_like_pvp(text) or bool(pvp_targets)
         development_intent = self._looks_like_development(text)
-        battle_intent = self._looks_like_battle(text)
-        if target:
+        battle_intent = self._looks_like_battle(text) or pvp_intent
+        purchase_intent = self._looks_like_buy(con, group_id, text) and not self._looks_like_transfer(text)
+        self_heal_intent = self._looks_like_self_heal(text)
+        if purchase_intent:
+            (
+                summary,
+                money_delta,
+                hp_delta,
+                energy_delta,
+                water_delta,
+                satiety_delta,
+                mood_delta,
+                death_protection_delta,
+            ) = self._resolve_purchase(con, group_id, row)
+        elif self_heal_intent:
+            cost = min(int(row["money"]), 30)
+            if cost >= 10:
+                money_delta = -cost
+                hp_delta = min(25, cost)
+                summary = f"你接受了基础治疗，花费 {cost} 学都币，生命有所恢复。"
+            else:
+                summary = "你想治疗伤势，但学都币不太够。"
+                warnings.append("治疗失败：余额不足。")
+        elif target:
             if self._can_move(con, group_id, row["location_key"], target["location_key"]):
                 location_key = target["location_key"]
                 summary = f"你从{old_location['name'] if old_location else '原地'}去了{target['name']}。"
@@ -850,32 +907,19 @@ class TextWorldService:
             elif accepted and battle_intent:
                 exp_delta = self._exp_with_trait_bonus(row, 20, "battle")
                 energy_delta -= 14
-                hp_delta -= random.randint(2, 8)
-                summary += f" 随后进行了一次可控冲突训练，获得 {exp_delta} 点战斗经验。"
+                if pvp_intent:
+                    damage = self._pvp_self_damage(row, pvp_targets, text)
+                    hp_delta -= damage
+                    mood_delta -= 3
+                    summary += f" 随后爆发了真实冲突，承受 {damage} 点伤害，获得 {exp_delta} 点战斗经验。"
+                else:
+                    training_damage = self._training_damage(text)
+                    hp_delta -= training_damage
+                    summary += f" 随后进行了有接触的实战训练，承受 {training_damage} 点伤害，获得 {exp_delta} 点战斗经验。"
         elif self._looks_like_rest(text):
             summary = "你把这一轮用于休整，精力和心情略有恢复。"
             energy_delta = 12
             mood_delta = 3
-        elif self._looks_like_buy(con, group_id, text):
-            (
-                summary,
-                money_delta,
-                hp_delta,
-                energy_delta,
-                water_delta,
-                satiety_delta,
-                mood_delta,
-                death_protection_delta,
-            ) = self._resolve_purchase(con, group_id, row)
-        elif self._looks_like_heal(text):
-            cost = min(int(row["money"]), 30)
-            if cost >= 10:
-                money_delta = -cost
-                hp_delta = min(25, cost)
-                summary = f"你接受了基础治疗，花费 {cost} 学都币，生命有所恢复。"
-            else:
-                summary = "你想治疗伤势，但学都币不太够。"
-                warnings.append("治疗失败：余额不足。")
         elif self._looks_like_work(text):
             gain = random.randint(8, 20)
             money_delta = self._income_with_level_bonus(gain, row["power_level"])
@@ -897,8 +941,20 @@ class TextWorldService:
         elif battle_intent:
             exp_delta = self._exp_with_trait_bonus(row, 20, "battle")
             energy_delta = -22
-            hp_delta -= random.randint(2, 8)
-            summary = f"你卷入了一次可控冲突训练，获得 {exp_delta} 点战斗经验。"
+            if pvp_intent:
+                damage = self._pvp_self_damage(row, pvp_targets, text)
+                hp_delta -= damage
+                mood_delta -= 4
+                if pvp_targets:
+                    target_names = "、".join(str(item.get("game_name") or "") for item in pvp_targets[:3])
+                    summary = f"你和{target_names}爆发了正面冲突。能力、体力和临场判断都被拉到危险区间，本轮承受 {damage} 点伤害，获得 {exp_delta} 点战斗经验。"
+                else:
+                    summary = f"你主动卷入真实冲突，本轮承受 {damage} 点伤害，获得 {exp_delta} 点战斗经验。"
+                warnings.append("真实冲突会造成生命损失；如果继续互殴，可能进入濒死保护或复苏惩罚。")
+            else:
+                training_damage = self._training_damage(text)
+                hp_delta -= training_damage
+                summary = f"你进行了一次有接触的实战训练，承受 {training_damage} 点伤害，获得 {exp_delta} 点战斗经验。"
         if self._looks_like_ability_use(text):
             power_cost = self._power_use_cost(row["power_level"], text)
             energy_delta -= power_cost
@@ -910,7 +966,7 @@ class TextWorldService:
         if risk_score:
             energy_delta -= min(8, risk_score * 2)
             if random.random() < min(0.18 + risk_score * 0.09, 0.72):
-                injury = random.randint(2 + risk_score, 6 + risk_score * 3)
+                injury = random.randint(2 + risk_score, 6 + risk_score * 3) * self.config.risk_damage_multiplier
                 hp_delta -= injury
                 warnings.append(f"高风险行动造成受伤：生命 -{injury}。")
             if self._mentions_canon_core_secret(text):
@@ -988,7 +1044,113 @@ class TextWorldService:
                 "exp": exp_delta,
                 "death_protection": death_protection_delta,
             },
+            "passive_impacts": [],
         }
+
+    def _resolve_passive_pvp_impacts(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        passive_pvp_index: dict[int, list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        outcomes: list[dict[str, Any]] = []
+        for target_id, attacks in passive_pvp_index.items():
+            if not attacks:
+                continue
+            target = con.execute("SELECT * FROM characters WHERE id=? AND group_id=?", (target_id, group_id)).fetchone()
+            if not target:
+                continue
+            total_hp = 0
+            total_energy = 0
+            total_mood = 0
+            attacker_names: list[str] = []
+            for attack in attacks[:4]:
+                attacker = attack.get("attacker") or {}
+                attacker_names.append(str(attacker.get("game_name") or "某个玩家"))
+                damage = self._passive_pvp_damage(target, attacker, str(attack.get("text") or ""))
+                total_hp -= damage
+                total_energy -= max(4, int(damage * 0.35))
+                total_mood -= max(2, int(damage * 0.2))
+            if len(attacks) > 4:
+                extra = len(attacks) - 4
+                total_hp -= extra * 4
+                total_energy -= extra * 2
+                total_mood -= extra
+            new_hp = clamp(int(target["hp"]) + total_hp)
+            new_energy = clamp(int(target["energy"]) + total_energy)
+            new_mood = clamp(int(target["mood"]) + total_mood)
+            warnings = ["你本轮没有主动处理这次冲突，但其他玩家的行动影响到了你。"]
+            if new_hp <= 0:
+                death_protection = int(target["death_protection"] or 0)
+                if death_protection > 0:
+                    death_protection -= 1
+                    new_hp = 1
+                    warnings.append("死亡保护卡生效：本次被动冲突后保留 1 点生命。")
+                else:
+                    death_protection = 0
+                    new_hp = 1
+                    warnings.append("你被打到濒死边缘，之后最好尽快治疗或休息。")
+                con.execute(
+                    "UPDATE characters SET hp=?,energy=?,mood=?,death_protection=?,updated_at=? WHERE id=?",
+                    (new_hp, new_energy, new_mood, death_protection, utc_now_iso(), target_id),
+                )
+            else:
+                con.execute(
+                    "UPDATE characters SET hp=?,energy=?,mood=?,updated_at=? WHERE id=?",
+                    (new_hp, new_energy, new_mood, utc_now_iso(), target_id),
+                )
+            attacker_text = "、".join(attacker_names[:4])
+            if len(attacker_names) > 4:
+                attacker_text += f"等 {len(attacker_names)} 人"
+            outcomes.append(
+                {
+                    "action_id": None,
+                    "character_id": target_id,
+                    "qq_id": target["qq_id"],
+                    "game_name": target["game_name"],
+                    "text": "",
+                    "accepted": True,
+                    "summary": f"{attacker_text}的行动波及了你，你被迫卷入冲突并承受了伤害。",
+                    "location_key": target["location_key"],
+                    "encounters": [],
+                    "warnings": warnings,
+                    "deltas": {
+                        "hp": total_hp,
+                        "energy": total_energy,
+                        "water": 0,
+                        "satiety": 0,
+                        "mood": total_mood,
+                        "money": 0,
+                        "exp": 0,
+                        "death_protection": 0,
+                    },
+                    "passive_impacts": [],
+                }
+            )
+        return outcomes
+
+    def _passive_pvp_damage(
+        self,
+        target: sqlite3.Row,
+        attacker: dict[str, Any],
+        text: str,
+    ) -> int:
+        low = max(1, int(self.config.pvp_damage_min * 0.7))
+        high = max(low, int(self.config.pvp_damage_max * 0.9))
+        attacker_level = self._power_level_value(str(attacker.get("power_level") or ""))
+        target_level = self._power_level_value(str(target["power_level"] or ""))
+        level_gap = attacker_level - target_level
+        low += max(0, level_gap) * 3
+        high += max(0, level_gap) * 5
+        if int(target["energy"]) < 30:
+            low += 2
+            high += 5
+        if any(word in text for word in ("全力", "下重手", "不留手", "拼命", "生死", "致命")):
+            low += 4
+            high += 10
+        low = max(1, min(95, low))
+        high = max(low, min(98, high))
+        return random.randint(low, high)
 
     def _build_public_summary(
         self,
@@ -1028,8 +1190,14 @@ class TextWorldService:
             lines.append("你遇到了：" + "、".join(item["name"] for item in outcome["encounters"][:6]))
         if outcome["warnings"]:
             lines.append("提醒：" + "；".join(outcome["warnings"]))
+        if outcome.get("passive_impacts"):
+            lines.append("交互影响：")
+            for impact in outcome["passive_impacts"][:4]:
+                lines.append("- " + str(impact.get("summary") or "你受到了其他玩家行动的影响。"))
         deltas = outcome["deltas"]
-        delta_text = "，".join(f"{key} {value:+d}" for key, value in deltas.items() if value)
+        delta_text = "，".join(
+            f"{self._delta_label(key)} {value:+d}" for key, value in deltas.items() if value
+        )
         if delta_text:
             lines.append("本轮变化：" + delta_text)
         if char:
@@ -1037,6 +1205,19 @@ class TextWorldService:
                 f"状态：生命 {char['hp']}/100，精力 {char['energy']}/100，水分 {char['water']}/100，饱食度 {char['satiety']}/100，心情 {char['mood']}/100，学都币 {char['money']}"
             )
         return "\n".join(lines)
+
+    def _delta_label(self, key: str) -> str:
+        return {
+            "hp": "生命",
+            "energy": "精力",
+            "water": "水分",
+            "satiety": "饱食度",
+            "mood": "心情",
+            "money": "学都币",
+            "exp": "能力经验",
+            "death_protection": "死亡保护",
+            "relation": "关系",
+        }.get(str(key), str(key))
 
     def _move_npcs(self, con: sqlite3.Connection, group_id: str) -> list[str]:
         rows = con.execute("SELECT * FROM npcs WHERE group_id=?", (group_id,)).fetchall()
@@ -1153,34 +1334,55 @@ class TextWorldService:
             (group_id,),
         ).fetchall()
         text = str(row["text"])
-        selected = self._select_purchase_item(items, text, int(row["money"]))
-        if not selected:
+        selections = self._select_purchase_items(items, text, int(row["money"]))
+        if not selections:
             return "你想购买东西，但没说清楚要买什么。", 0, 0, 0, 0, 0, 0, 0
-        if selected["price"] > row["money"]:
-            return f"你想购买{selected['name']}，但学都币不足。", 0, 0, 0, -3, -2, 0, 0
-        if int(selected["stock"]) == 0:
-            return f"你想购买{selected['name']}，但已经售罄。", 0, 0, 0, -3, -2, 0, 0
-        effect = loads(selected["effect_json"], {})
-        if not isinstance(effect, dict):
-            effect = {}
-        if int(selected["stock"]) > 0:
-            con.execute("UPDATE shop_items SET stock=stock-1, updated_at=? WHERE id=?", (utc_now_iso(), selected["id"]))
-        con.execute(
-            """
-            INSERT INTO inventory(character_id,item_name,quantity,meta_json) VALUES(?,?,?,?)
-            ON CONFLICT(character_id,item_name) DO UPDATE SET quantity=quantity+excluded.quantity
-            """,
-            (row["character_id"], selected["name"], 1, "{}"),
-        )
-        water_delta = int_value(effect.get("water"), 0) - 3
-        satiety_delta = int_value(effect.get("satiety"), 0) - 2
-        hp_delta = int_value(effect.get("hp"), 0)
-        energy_delta = int_value(effect.get("energy"), 0)
-        mood_delta = int_value(effect.get("mood"), 0)
-        death_protection_delta = max(0, int_value(effect.get("death_protection"), 0))
+        current_money = int(row["money"])
+        purchased: list[sqlite3.Row] = []
+        skipped: list[str] = []
+        hp_delta = 0
+        energy_delta = 0
+        water_delta = -3
+        satiety_delta = -2
+        mood_delta = 0
+        death_protection_delta = 0
+        money_delta = 0
+        for selected in selections[:4]:
+            price = int(selected["price"])
+            if int(selected["stock"]) == 0:
+                skipped.append(f"{selected['name']}售罄")
+                continue
+            if price > current_money:
+                skipped.append(f"{selected['name']}余额不足")
+                continue
+            effect = loads(selected["effect_json"], {})
+            if not isinstance(effect, dict):
+                effect = {}
+            if int(selected["stock"]) > 0:
+                con.execute("UPDATE shop_items SET stock=stock-1, updated_at=? WHERE id=?", (utc_now_iso(), selected["id"]))
+            con.execute(
+                """
+                INSERT INTO inventory(character_id,item_name,quantity,meta_json) VALUES(?,?,?,?)
+                ON CONFLICT(character_id,item_name) DO UPDATE SET quantity=quantity+excluded.quantity
+                """,
+                (row["character_id"], selected["name"], 1, "{}"),
+            )
+            current_money -= price
+            money_delta -= price
+            purchased.append(selected)
+            water_delta += int_value(effect.get("water"), 0)
+            satiety_delta += int_value(effect.get("satiety"), 0)
+            hp_delta += int_value(effect.get("hp"), 0)
+            energy_delta += int_value(effect.get("energy"), 0)
+            mood_delta += int_value(effect.get("mood"), 0)
+            death_protection_delta += max(0, int_value(effect.get("death_protection"), 0))
+        if not purchased:
+            return "你想购买东西，但" + "、".join(skipped or ["没有可购买的商品"]) + "。", 0, 0, 0, -3, -2, 0, 0
+        names = "、".join(str(item["name"]) for item in purchased)
+        skipped_text = f"；未完成：{'、'.join(skipped)}" if skipped else ""
         return (
-            f"你购买了{selected['name']}，花费 {selected['price']} 学都币，物品已放入背包。",
-            -int(selected["price"]),
+            f"你购买了{names}，共花费 {-money_delta} 学都币，物品已放入背包{skipped_text}。",
+            money_delta,
             hp_delta,
             energy_delta,
             water_delta,
@@ -1188,6 +1390,29 @@ class TextWorldService:
             mood_delta,
             death_protection_delta,
         )
+
+    def _select_purchase_items(self, items: list[sqlite3.Row], text: str, money: int) -> list[sqlite3.Row]:
+        explicit = self._explicit_purchase_items(items, text)
+        if explicit:
+            return explicit[:4]
+        selected = self._select_purchase_item(items, text, money)
+        return [selected] if selected else []
+
+    def _explicit_purchase_items(self, items: list[sqlite3.Row], text: str) -> list[sqlite3.Row]:
+        normalized_text = self._normalize_purchase_text(text)
+        matches: list[sqlite3.Row] = []
+        seen: set[int] = set()
+        for item in items:
+            if int(item["stock"]) == 0:
+                continue
+            if self._item_purchase_matches(item["name"], normalized_text):
+                item_id = int(item["id"])
+                if item_id not in seen:
+                    matches.append(item)
+                    seen.add(item_id)
+        if len(matches) >= 2:
+            return sorted(matches, key=lambda item: normalized_text.find(self._normalize_purchase_text(str(item["name"] or ""))))
+        return matches
 
     def _select_purchase_item(self, items: list[sqlite3.Row], text: str, money: int) -> sqlite3.Row | None:
         lower_text = self._normalize_purchase_text(text).lower()
@@ -1227,8 +1452,8 @@ class TextWorldService:
                     return item
 
         keyword_groups = (
-            (self._purchase_intent_words("food"), ("便当", "套餐", "午餐", "折扣券")),
-            (self._purchase_intent_words("water"), ("水", "饮料", "果冻")),
+            (self._purchase_intent_words("food"), ("便当", "套餐", "午餐", "折扣券", "果冻")),
+            (self._purchase_intent_words("water"), ("矿泉水", "瓶装水", "饮用水", "水", "饮料", "果冻")),
             (self._purchase_intent_words("heal"), ("绷带", "凝胶", "医疗")),
             (self._purchase_intent_words("info"), ("书库", "检索", "资料卡", "点数")),
         )
@@ -1258,6 +1483,17 @@ class TextWorldService:
     def _normalize_purchase_text(self, text: str) -> str:
         text = str(text or "")
         aliases = (
+            ("饮用水", "矿泉水"),
+            ("瓶装水", "矿泉水"),
+            ("一瓶水", "矿泉水"),
+            ("瓶水", "矿泉水"),
+            ("学生便当", "学生便当"),
+            ("便当", "学生便当"),
+            ("备用电池", "便携终端电池"),
+            ("终端电池", "便携终端电池"),
+            ("电池包", "便携终端电池"),
+            ("创可贴", "便携绷带"),
+            ("绷带", "便携绷带"),
             ("地铁一日券", "地下铁一日券"),
             ("地铁票", "地下铁一日券"),
             ("地铁券", "地下铁一日券"),
@@ -1275,8 +1511,8 @@ class TextWorldService:
 
     def _purchase_intent_words(self, category: str = "") -> tuple[str, ...]:
         groups = {
-            "food": ("吃饭", "点餐", "用餐", "午餐", "晚餐", "早餐", "热餐", "便当", "套餐", "饿"),
-            "water": ("喝水", "饮水", "补水", "口渴", "喝饮料", "补充饮料"),
+            "food": ("吃饭", "点餐", "用餐", "午餐", "晚餐", "早餐", "热餐", "买饭", "买便当", "要便当", "要套餐", "饿"),
+            "water": ("喝水", "饮水", "补水", "口渴", "喝饮料", "补充饮料", "买水", "要水", "要饮料"),
             "heal": ("绷带", "凝胶", "药", "医疗用品"),
             "travel": ("通勤", "地铁", "公交", "单轨", "车票"),
             "info": ("书库", "检索", "资料卡", "查询点数"),
@@ -1399,6 +1635,30 @@ class TextWorldService:
             (group_id, from_key, to_key),
         ).fetchone())
 
+    def _projected_action_location(self, con: sqlite3.Connection, group_id: str, action: dict[str, Any]) -> str:
+        current_key = str(action.get("location_key") or "")
+        text = str(action.get("text") or "")
+        if not current_key:
+            return ""
+        if self._looks_like_buy(con, group_id, text) or self._looks_like_self_heal(text) or self._looks_like_rest(text):
+            return current_key
+        target = self._extract_location(con, group_id, current_key, text)
+        if target and target["location_key"] != current_key and self._can_move(con, group_id, current_key, target["location_key"]):
+            return str(target["location_key"])
+        return current_key
+
+    def _same_round_reachable(
+        self,
+        actor: dict[str, Any],
+        target: sqlite3.Row,
+        projected_locations: dict[int, str],
+    ) -> bool:
+        actor_id = int(actor.get("id") or 0)
+        target_id = int(target["id"])
+        actor_location = projected_locations.get(actor_id) or str(actor.get("location_key") or "")
+        target_location = projected_locations.get(target_id) or str(target["location_key"] or "")
+        return bool(actor_location and target_location and actor_location == target_location)
+
     def _extract_location(self, con: sqlite3.Connection, group_id: str, current_key: str, text: str) -> sqlite3.Row | None:
         rows = con.execute("SELECT * FROM locations WHERE group_id=?", (group_id,)).fetchall()
         matches = [row for row in rows if row["name"] in text or row["location_key"] in text]
@@ -1501,6 +1761,8 @@ class TextWorldService:
             normalized_pattern = re.sub(r"\s+", "", pattern.lower())
             if normalized_pattern in compact:
                 return f"行动被反作弊拦截：包含高风险词“{pattern}”。"
+        if self._looks_like_claimed_incoming_transfer(text):
+            return "行动被反作弊拦截：不能单方面声明别人给你钱或物品。请让对方用自己的行动写明赠与/转账。"
         if re.search(r"(给我|获得|增加).{0,8}([0-9]{4,}|无限).{0,8}(学都币|金币|钱)", text):
             return "行动被反作弊拦截：不能直接刷取大量货币。"
         return ""
@@ -1545,7 +1807,13 @@ class TextWorldService:
         return ""
 
     def normalize_action(self, text: str) -> str:
-        return re.sub(r"\s+", " ", text or "").strip()
+        text = re.sub(r"\s+", " ", text or "").strip()
+        for prefix in ("行动", "文游行动", "提交行动"):
+            if text == prefix:
+                return ""
+            if text.startswith(prefix):
+                return text[len(prefix):].strip()
+        return text
 
     def clean_name(self, text: str) -> str:
         return re.sub(r"\s+", "", text or "")[:32]
@@ -1566,7 +1834,11 @@ class TextWorldService:
         return any(word in text.lower() for word in ("休息", "睡觉", "放松", "恢复", "躺", "自习", "rest", "sleep"))
 
     def _looks_like_buy(self, con: sqlite3.Connection, group_id: str, text: str) -> bool:
-        if any(word in text or word in text.lower() for word in ("买", "购买", "拿", "拿取", "兑换", "补给", "吃饭", "点餐", "用餐", "购物", "消费", "付款", "结账", "buy")):
+        if self._looks_like_theft_transfer(text) or self._looks_like_claimed_incoming_transfer(text):
+            return False
+        if any(word in text or word in text.lower() for word in ("买", "购买", "拿取", "领取", "换取", "兑换", "补给", "吃饭", "点餐", "用餐", "购物", "消费", "付款", "结账", "buy")):
+            return True
+        if self._purchase_item_mentioned_with_intent(con, group_id, text):
             return True
         broad_purchase_words = (
             *self._purchase_intent_words("food"),
@@ -1588,8 +1860,6 @@ class TextWorldService:
             "乘车券",
         )
         if any(word in text for word in travel_ticket_words):
-            return True
-        if self._purchase_item_mentioned_with_intent(con, group_id, text):
             return True
         return False
 
@@ -1638,13 +1908,677 @@ class TextWorldService:
                 "对练",
                 "实战",
                 "冲突",
+                "互殴",
+                "打架",
+                "攻击",
+                "袭击",
+                "殴打",
                 "迎战",
                 "战斗",
             )
         )
 
+    def _looks_like_pvp(self, text: str) -> bool:
+        return self._looks_like_theft_transfer(text) or any(
+            word in text
+            for word in (
+                "互殴",
+                "打架",
+                "殴打",
+                "攻击",
+                "袭击",
+                "揍",
+                "打他",
+                "打她",
+                "打倒",
+                "击倒",
+                "制服",
+                "干架",
+                "决斗",
+                "正面冲突",
+                "下重手",
+                "全力打",
+            )
+        )
+
+    def _training_damage(self, text: str) -> int:
+        low = max(3, int(self.config.pvp_damage_min * 0.35))
+        high = max(low, int(self.config.pvp_damage_max * 0.5))
+        if self._looks_like_pvp(text):
+            low = max(low, int(self.config.pvp_damage_min * 0.6))
+            high = max(high, int(self.config.pvp_damage_max * 0.75))
+        return random.randint(low, high)
+
+    def _pvp_self_damage(
+        self,
+        actor: sqlite3.Row,
+        pvp_targets: list[dict[str, Any]],
+        text: str,
+    ) -> int:
+        low = self.config.pvp_damage_min
+        high = self.config.pvp_damage_max
+        actor_level = self._power_level_value(actor["power_level"])
+        if pvp_targets:
+            target_levels = [self._power_level_value(str(item.get("power_level") or "")) for item in pvp_targets]
+            strongest_target = max(target_levels) if target_levels else actor_level
+            level_gap = strongest_target - actor_level
+            low += max(0, level_gap) * 3
+            high += max(0, level_gap) * 5
+            if len(pvp_targets) >= 2:
+                low += 4
+                high += 8
+        if int(actor["energy"]) < 30:
+            low += 3
+            high += 6
+        if int(actor["hp"]) < 35:
+            low += 2
+            high += 5
+        if any(word in text for word in ("全力", "下重手", "不留手", "拼命", "生死", "致命")):
+            low += 5
+            high += 12
+        low = max(1, min(95, low))
+        high = max(low, min(98, high))
+        return random.randint(low, high)
+
+    def _passive_pvp_already_answered(
+        self,
+        target_action: dict[str, Any] | None,
+        attack: dict[str, Any],
+    ) -> bool:
+        if not target_action:
+            return False
+        text = str(target_action.get("text") or "")
+        attacker = attack.get("attacker") or {}
+        if self._looks_like_pvp(text) and self._mentions_character_dict(text, attacker):
+            return True
+        return False
+
+    def _build_passive_social_index(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        actions: list[dict[str, Any]],
+    ) -> dict[int, list[dict[str, Any]]]:
+        if not actions:
+            return {}
+        characters = con.execute(
+            "SELECT id, game_name, display_name, qq_id, location_key, power_level FROM characters WHERE group_id=? AND audit_status='approved'",
+            (group_id,),
+        ).fetchall()
+        index: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for action in actions:
+            text = str(action.get("text") or "")
+            if self._looks_like_pvp(text) or not self._looks_like_social_interaction(text):
+                continue
+            actor_id = int(action["character_id"])
+            actor = next((dict(row) for row in characters if int(row["id"]) == actor_id), None)
+            if not actor:
+                continue
+            targets = [
+                dict(target)
+                for target in characters
+                if int(target["id"]) != actor_id and self._mentions_character(text, target)
+            ]
+            for target in targets[:4]:
+                index[int(target["id"])].append(
+                    {
+                        "actor": actor,
+                        "action_id": int(action["id"]),
+                        "text": text,
+                    }
+                )
+        return index
+
+    def _resolve_passive_social_impacts(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        passive_social_index: dict[int, list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        outcomes: list[dict[str, Any]] = []
+        for target_id, interactions in passive_social_index.items():
+            if not interactions:
+                continue
+            target = con.execute("SELECT * FROM characters WHERE id=? AND group_id=?", (target_id, group_id)).fetchone()
+            if not target:
+                continue
+            mood_delta = 0
+            energy_delta = 0
+            summaries: list[str] = []
+            for interaction in interactions[:4]:
+                actor = interaction.get("actor") or {}
+                actor_name = str(actor.get("game_name") or "某个玩家")
+                text = str(interaction.get("text") or "")
+                if self._looks_like_helpful_interaction(text):
+                    mood_delta += 2
+                    energy_delta -= 1
+                    summaries.append(f"{actor_name}的行动尝试与你协作或提供帮助。")
+                elif self._looks_like_social_pressure(text):
+                    mood_delta -= 2
+                    energy_delta -= 2
+                    summaries.append(f"{actor_name}的行动给你带来了一些压力。")
+                else:
+                    mood_delta += 1
+                    energy_delta -= 1
+                    summaries.append(f"{actor_name}的行动与你产生了交集。")
+            mood_delta = max(-8, min(8, mood_delta))
+            energy_delta = max(-8, min(2, energy_delta))
+            new_mood = clamp(int(target["mood"]) + mood_delta)
+            new_energy = clamp(int(target["energy"]) + energy_delta)
+            con.execute(
+                "UPDATE characters SET energy=?,mood=?,updated_at=? WHERE id=?",
+                (new_energy, new_mood, utc_now_iso(), target_id),
+            )
+            outcomes.append(
+                {
+                    "action_id": None,
+                    "character_id": target_id,
+                    "qq_id": target["qq_id"],
+                    "game_name": target["game_name"],
+                    "text": "",
+                    "accepted": True,
+                    "summary": "其他玩家的行动与你产生了交互。",
+                    "location_key": target["location_key"],
+                    "encounters": [],
+                    "warnings": ["你本轮即使没有主动行动，也收到了其他玩家行动带来的影响。"],
+                    "deltas": {
+                        "hp": 0,
+                        "energy": energy_delta,
+                        "water": 0,
+                        "satiety": 0,
+                        "mood": mood_delta,
+                        "money": 0,
+                        "exp": 0,
+                        "death_protection": 0,
+                    },
+                    "passive_impacts": [{"summary": summary} for summary in summaries],
+                }
+            )
+        return outcomes
+
+    def _resolve_active_social_impacts(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        actions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not actions:
+            return []
+        characters = con.execute(
+            "SELECT * FROM characters WHERE group_id=? AND audit_status='approved'",
+            (group_id,),
+        ).fetchall()
+        char_by_id = {int(row["id"]): row for row in characters}
+        outcomes: list[dict[str, Any]] = []
+        for action in actions:
+            text = str(action.get("text") or "")
+            if self._looks_like_pvp(text) or not self._looks_like_social_interaction(text):
+                continue
+            actor = char_by_id.get(int(action["character_id"]))
+            if not actor:
+                continue
+            targets = [
+                target
+                for target in characters
+                if int(target["id"]) != int(actor["id"]) and self._mentions_character(text, target)
+            ]
+            for target in targets[:4]:
+                interaction = self._classify_social_interaction(text)
+                relation_delta = self._social_relation_delta(interaction)
+                self._adjust_player_relationship(con, group_id, int(actor["id"]), int(target["id"]), relation_delta)
+                self._adjust_player_relationship(con, group_id, int(target["id"]), int(actor["id"]), max(-2, min(3, relation_delta)))
+                transfer_text, actor_money_delta, target_money_delta = self._try_social_transfer(con, actor, target, text, interaction)
+                actor_deltas = self._social_state_deltas(interaction, "actor")
+                target_deltas = self._social_state_deltas(interaction, "target")
+                actor_deltas["money"] = actor_deltas.get("money", 0) + actor_money_delta
+                target_deltas["money"] = target_deltas.get("money", 0) + target_money_delta
+                self._apply_social_state_deltas(con, int(actor["id"]), actor_deltas)
+                self._apply_social_state_deltas(con, int(target["id"]), target_deltas)
+                outcomes.append(
+                    self._social_outcome(
+                        actor,
+                        target,
+                        interaction,
+                        relation_delta,
+                        transfer_text,
+                        actor_deltas,
+                        perspective="actor",
+                    )
+                )
+                outcomes.append(
+                    self._social_outcome(
+                        target,
+                        actor,
+                        interaction,
+                        max(-2, min(3, relation_delta)),
+                        transfer_text,
+                        target_deltas,
+                        perspective="target",
+                    )
+                )
+        return outcomes
+
+    def _social_outcome(
+        self,
+        receiver: sqlite3.Row,
+        other: sqlite3.Row,
+        interaction: str,
+        relation_delta: int,
+        transfer_text: str,
+        state_deltas: dict[str, int],
+        *,
+        perspective: str,
+    ) -> dict[str, Any]:
+        if perspective == "actor":
+            summary = self._actor_social_summary(other["game_name"], interaction)
+        else:
+            summary = self._target_social_summary(other["game_name"], interaction)
+        passive_impacts = [{"summary": summary}]
+        if transfer_text:
+            passive_impacts.append({"summary": transfer_text})
+        return {
+            "action_id": None,
+            "character_id": receiver["id"],
+            "qq_id": receiver["qq_id"],
+            "game_name": receiver["game_name"],
+            "text": "",
+            "accepted": True,
+            "summary": summary,
+            "location_key": receiver["location_key"],
+            "encounters": [],
+            "warnings": [],
+            "deltas": {
+                "hp": 0,
+                "energy": state_deltas.get("energy", 0),
+                "water": 0,
+                "satiety": 0,
+                "mood": state_deltas.get("mood", 0),
+                "money": state_deltas.get("money", 0),
+                "exp": 0,
+                "death_protection": 0,
+                "relation": relation_delta,
+            },
+            "passive_impacts": passive_impacts,
+        }
+
+    def _classify_social_interaction(self, text: str) -> str:
+        if self._looks_like_theft_transfer(text):
+            return "pressure"
+        if self._looks_like_transfer(text):
+            return "transfer"
+        if any(word in text for word in ("保护", "护送", "掩护", "支援", "救", "治疗", "送医", "医院", "包扎")):
+            return "support"
+        if any(word in text for word in ("一起", "同行", "会合", "组队", "带上", "陪")):
+            return "together"
+        if any(word in text for word in ("交流", "聊天", "谈", "询问", "分享", "提醒")):
+            return "talk"
+        if self._looks_like_social_pressure(text):
+            return "pressure"
+        return "contact"
+
+    def _social_relation_delta(self, interaction: str) -> int:
+        return {
+            "support": 2,
+            "transfer": 1,
+            "together": 1,
+            "talk": 1,
+            "contact": 0,
+            "pressure": -2,
+        }.get(interaction, 0)
+
+    def _social_state_deltas(self, interaction: str, perspective: str) -> dict[str, int]:
+        if interaction == "support":
+            return {"energy": -2, "mood": 1 if perspective == "actor" else 3}
+        if interaction == "transfer":
+            return {"energy": -1, "mood": 1}
+        if interaction == "together":
+            return {"energy": -2, "mood": 1}
+        if interaction == "talk":
+            return {"energy": -1, "mood": 1}
+        if interaction == "pressure":
+            return {"energy": -2, "mood": -2 if perspective == "actor" else -4}
+        return {"energy": 0, "mood": 0}
+
+    def _apply_social_state_deltas(self, con: sqlite3.Connection, character_id: int, deltas: dict[str, int]) -> None:
+        energy_delta = int(deltas.get("energy", 0))
+        mood_delta = int(deltas.get("mood", 0))
+        if not energy_delta and not mood_delta:
+            return
+        row = con.execute("SELECT energy,mood FROM characters WHERE id=?", (character_id,)).fetchone()
+        if not row:
+            return
+        con.execute(
+            "UPDATE characters SET energy=?, mood=?, updated_at=? WHERE id=?",
+            (clamp(int(row["energy"]) + energy_delta), clamp(int(row["mood"]) + mood_delta), utc_now_iso(), character_id),
+        )
+
+    def _actor_social_summary(self, target_name: str, interaction: str) -> str:
+        mapping = {
+            "support": f"你对{target_name}提供了支援或保护，这会让对方更容易感受到你的立场。",
+            "transfer": f"你和{target_name}产生了物品或金钱往来，系统已尝试按行动内容处理转移。",
+            "together": f"你尝试和{target_name}共同行动，本轮会把你们的交集记录下来。",
+            "talk": f"你和{target_name}进行了交流，关系出现轻微变化。",
+            "pressure": f"你对{target_name}施加了压力，这可能降低对方对你的观感。",
+            "contact": f"你和{target_name}产生了交集。",
+        }
+        return mapping.get(interaction, mapping["contact"])
+
+    def _target_social_summary(self, actor_name: str, interaction: str) -> str:
+        mapping = {
+            "support": f"{actor_name}对你提供了支援或保护。",
+            "transfer": f"{actor_name}和你产生了物品或金钱往来。",
+            "together": f"{actor_name}尝试与你共同行动。",
+            "talk": f"{actor_name}与你进行了交流。",
+            "pressure": f"{actor_name}对你施加了压力，你对这次接触的感受并不轻松。",
+            "contact": f"{actor_name}的行动与你产生了交集。",
+        }
+        return mapping.get(interaction, mapping["contact"])
+
+    def _adjust_player_relationship(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        source_id: int,
+        target_id: int,
+        delta: int,
+    ) -> None:
+        if not delta or source_id == target_id:
+            return
+        con.execute(
+            """
+            INSERT INTO relationships(group_id,source_type,source_id,target_type,target_id,score,updated_at)
+            VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(group_id,source_type,source_id,target_type,target_id)
+            DO UPDATE SET score=max(-100,min(100,score+excluded.score)), updated_at=excluded.updated_at
+            """,
+            (group_id, "player", str(source_id), "player", str(target_id), delta, utc_now_iso()),
+        )
+
+    def _try_social_transfer(
+        self,
+        con: sqlite3.Connection,
+        actor: sqlite3.Row,
+        target: sqlite3.Row,
+        text: str,
+        interaction: str,
+    ) -> tuple[str, int, int]:
+        if interaction != "transfer":
+            return "", 0, 0
+        if not self._is_outgoing_transfer(text):
+            if self._looks_like_theft_transfer(text):
+                return "检测到抢夺/偷取意图：本轮按压力或冲突处理，不会直接转移对方资源。", 0, 0
+            if self._looks_like_claimed_incoming_transfer(text):
+                return "检测到单方声明对方给你资源：未获得对方行动确认，不会过账。", 0, 0
+            return "检测到资源往来意图，但方向不明确；只有主动给出自己资源才会过账。", 0, 0
+        money_match = re.search(r"([0-9]{1,5})\s*(?:学都币|币|元)", text)
+        if money_match:
+            amount = max(1, min(10000, int(money_match.group(1))))
+            balance_row = con.execute("SELECT money FROM characters WHERE id=?", (actor["id"],)).fetchone()
+            current_money = int(balance_row["money"]) if balance_row else int(actor["money"])
+            if current_money >= amount:
+                con.execute("UPDATE characters SET money=money-?, updated_at=? WHERE id=?", (amount, utc_now_iso(), actor["id"]))
+                con.execute("UPDATE characters SET money=money+?, updated_at=? WHERE id=?", (amount, utc_now_iso(), target["id"]))
+                return f"转移学都币 {amount}：{actor['game_name']} -> {target['game_name']}。", -amount, amount
+            return f"{actor['game_name']}想转移 {amount} 学都币，但余额不足（当前 {max(0, current_money)}），转移未完成。", 0, 0
+        item_name = self._extract_inventory_item_name(con, actor["id"], text)
+        if item_name:
+            row = con.execute(
+                "SELECT quantity FROM inventory WHERE character_id=? AND item_name=?",
+                (actor["id"], item_name),
+            ).fetchone()
+            if row and int(row["quantity"]) > 0:
+                con.execute(
+                    "UPDATE inventory SET quantity=quantity-1 WHERE character_id=? AND item_name=?",
+                    (actor["id"], item_name),
+                )
+                con.execute(
+                    """
+                    INSERT INTO inventory(character_id,item_name,quantity,meta_json) VALUES(?,?,?,?)
+                    ON CONFLICT(character_id,item_name) DO UPDATE SET quantity=quantity+excluded.quantity
+                    """,
+                    (target["id"], item_name, 1, "{}"),
+                )
+                return f"转移物品：{actor['game_name']} 将 {item_name} x1 交给 {target['game_name']}。", 0, 0
+            return f"{actor['game_name']}想转移 {item_name}，但背包里没有可用数量。", 0, 0
+        return "检测到转移意图，但没有识别到明确金额或背包物品名称。", 0, 0
+
+    def _extract_inventory_item_name(self, con: sqlite3.Connection, character_id: int, text: str) -> str:
+        rows = con.execute(
+            "SELECT item_name FROM inventory WHERE character_id=? AND quantity>0 ORDER BY length(item_name) DESC",
+            (character_id,),
+        ).fetchall()
+        for row in rows:
+            name = str(row["item_name"] or "")
+            if name and name in text:
+                return name
+        return ""
+
+    def _looks_like_social_interaction(self, text: str) -> bool:
+        return any(
+            word in text
+            for word in (
+                "一起",
+                "同行",
+                "邀请",
+                "约",
+                "找",
+                "等待",
+                "会合",
+                "碰面",
+                "交流",
+                "聊天",
+                "帮助",
+                "协助",
+                "保护",
+                "跟随",
+                "组队",
+                "带上",
+                "陪",
+                "给",
+                "送",
+                "赠送",
+                "交换",
+                "交易",
+                "转账",
+                "支付",
+                "逼问",
+                "威胁",
+                "拦住",
+                "质问",
+                "跟踪",
+                "盯梢",
+                "纠缠",
+            )
+        )
+
+    def _looks_like_transfer(self, text: str) -> bool:
+        if any(word in text for word in ("交换", "交易", "转账", "支付", "付款", "过账")):
+            return True
+        resource_words = (
+            "学都币",
+            "金币",
+            "元",
+            "钱",
+            "物品",
+            "道具",
+            "背包",
+            "矿泉水",
+            "饮用水",
+            "瓶装水",
+            "学生便当",
+            "便当",
+            "创可贴",
+            "绷带",
+            "便携绷带",
+            "医疗凝胶贴",
+            "电池",
+            "终端电池",
+            "便携终端电池",
+            "电池包",
+            "资料卡",
+            "检索点数",
+            "通行证",
+            "通勤券",
+            "一日券",
+            "购物券",
+            "折扣券",
+            "定位卡",
+            "死亡保护卡",
+            "凭证",
+            "词条卡",
+            "装备",
+            "材料",
+        )
+        transfer_words = ("送", "赠送", "给", "交给", "递给", "拿给", "转交")
+        return any(word in text for word in transfer_words) and any(
+            word in text for word in resource_words
+        )
+
+    def _is_outgoing_transfer(self, text: str) -> bool:
+        if not self._looks_like_transfer(text):
+            return False
+        return bool(
+            re.search(r"(我|本人|自己).{0,8}(给|送|赠送|转账|支付|交给|拿给|递给)", text)
+            or re.search(r"(给|送|赠送|转账|支付|交给|拿给|递给).{0,24}(学都币|币|元|金币|钱|WaterBottle|饮用水|便当|创可贴|电池)", text)
+        ) and not self._looks_like_claimed_incoming_transfer(text) and not self._looks_like_theft_transfer(text)
+
+    def _looks_like_claimed_incoming_transfer(self, text: str) -> bool:
+        other_subject = r"(?!我|本人|自己)[A-Za-z0-9_\-\u4e00-\u9fff]{1,32}"
+        resource = r"(学都币|币|元|金币|钱|物品|道具|背包|矿泉水|饮用水|瓶装水|学生便当|便当|创可贴|绷带|便携绷带|医疗凝胶贴|电池|终端电池|便携终端电池|电池包|资料卡|检索点数|通行证|通勤券|一日券|购物券|折扣券|定位卡|死亡保护卡|凭证|词条卡|装备|材料)"
+        return bool(
+            re.search(rf"{other_subject}.{{0,12}}(给了?我|送了?我|转给我|转账给我|支付给我|交给我|赠送给我).{{0,24}}{resource}", text)
+            or re.search(rf"{other_subject}.{{0,12}}把.{{0,24}}{resource}.{{0,8}}(给|送|转|交给)我", text)
+            or re.search(rf"(我|本人).{{0,8}}(收到|拿到|获得|得到).{{0,16}}(他|她|对方|别人|玩家|{other_subject}).{{0,16}}{resource}", text)
+            or re.search(rf"(玩家|对方|{other_subject}).{{0,8}}(同意|答应|允许|承诺).{{0,8}}(给我|送我|转给我).{{0,24}}{resource}", text)
+        )
+
+    def _looks_like_theft_transfer(self, text: str) -> bool:
+        theft_word = any(
+            word in text
+            for word in (
+                "抢",
+                "抢夺",
+                "抢走",
+                "夺走",
+                "偷",
+                "偷走",
+                "扒窃",
+                "掏包",
+                "勒索",
+                "敲诈",
+                "搜身拿走",
+            )
+        ) or bool(re.search(r"从.{0,16}(身上|背包|口袋|钱包|那里|那边).{0,12}(拿|取|夺|偷|抢)", text))
+        return theft_word and any(word in text for word in ("学都币", "币", "元", "金币", "钱", "物品", "道具", "背包"))
+
+    def _looks_like_helpful_interaction(self, text: str) -> bool:
+        return any(word in text for word in ("帮助", "协助", "保护", "治疗", "分享", "送", "提醒", "陪", "支援"))
+
+    def _looks_like_social_pressure(self, text: str) -> bool:
+        return any(word in text for word in ("逼问", "威胁", "拦住", "质问", "跟踪", "盯梢", "纠缠"))
+
+    def _mentions_character_dict(self, text: str, character: dict[str, Any]) -> bool:
+        names = {
+            str(character.get("game_name") or "").strip(),
+            str(character.get("display_name") or "").strip(),
+            str(character.get("qq_id") or "").strip(),
+        }
+        return any(name and name in text for name in names)
+
+    def _power_level_value(self, power_level: str) -> int:
+        match = re.search(r"(?:level|lv)\.?\s*([0-5])", str(power_level or ""), re.I)
+        return int(match.group(1)) if match else 0
+
+    def _build_pvp_index(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        actions: list[dict[str, Any]],
+    ) -> tuple[dict[int, list[dict[str, Any]]], dict[int, list[dict[str, Any]]]]:
+        if not actions:
+            return {}, {}
+        characters = con.execute(
+            "SELECT id, game_name, display_name, qq_id, location_key, power_level FROM characters WHERE group_id=? AND audit_status='approved'",
+            (group_id,),
+        ).fetchall()
+        char_by_id = {int(row["id"]): dict(row) for row in characters}
+        action_by_character = {int(row["character_id"]): row for row in actions}
+        projected_locations = {
+            int(action["character_id"]): self._projected_action_location(con, group_id, action)
+            for action in actions
+        }
+        index: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        passive_index: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for action in actions:
+            text = str(action.get("text") or "")
+            if not self._looks_like_pvp(text):
+                continue
+            actor_id = int(action["character_id"])
+            actor = char_by_id.get(actor_id)
+            if not actor:
+                continue
+            named_targets = [
+                target
+                for target in characters
+                if int(target["id"]) != actor_id and self._mentions_character(text, target)
+            ]
+            named_targets = [
+                target for target in named_targets if self._same_round_reachable(actor, target, projected_locations)
+            ]
+            if not named_targets:
+                named_targets = [
+                    target
+                    for target in characters
+                    if int(target["id"]) != actor_id
+                    and self._same_round_reachable(actor, target, projected_locations)
+                    and self._looks_like_pvp(str(action_by_character.get(int(target["id"]), {}).get("text") or ""))
+                ]
+            for target in named_targets[:3]:
+                target_dict = dict(target)
+                index[int(action["id"])].append(target_dict)
+                passive_index[int(target["id"])].append(
+                    {
+                        "attacker": dict(actor),
+                        "action_id": int(action["id"]),
+                        "text": text,
+                    }
+                )
+                target_action = action_by_character.get(int(target["id"]))
+                if target_action and self._looks_like_pvp(str(target_action.get("text") or "")):
+                    index[int(target_action["id"])].append(dict(actor))
+        for action_id, targets in list(index.items()):
+            dedup: dict[int, dict[str, Any]] = {}
+            for target in targets:
+                dedup[int(target["id"])] = target
+            index[action_id] = list(dedup.values())
+        for target_id, attacks in list(passive_index.items()):
+            dedup_attacks: dict[tuple[int, int], dict[str, Any]] = {}
+            for attack in attacks:
+                attacker = attack.get("attacker") or {}
+                key = (int(attacker.get("id") or 0), int(attack.get("action_id") or 0))
+                dedup_attacks[key] = attack
+            passive_index[target_id] = list(dedup_attacks.values())
+        return index, passive_index
+
+    def _mentions_character(self, text: str, character: sqlite3.Row) -> bool:
+        names = {
+            str(character["game_name"] or "").strip(),
+            str(character["display_name"] or "").strip(),
+            str(character["qq_id"] or "").strip(),
+        }
+        return any(name and name in text for name in names)
+
     def _looks_like_heal(self, text: str) -> bool:
         return any(word in text.lower() for word in ("医院", "治疗", "看病", "疗伤", "包扎", "hospital", "heal", "clinic", "doctor"))
+
+    def _looks_like_self_heal(self, text: str) -> bool:
+        if not self._looks_like_heal(text):
+            return False
+        if any(word in text for word in ("护送", "送医", "带他", "带她", "带对方", "帮他", "帮她", "给他", "给她", "替他", "替她")):
+            return False
+        if re.search(r"(护送|帮助|协助|救助|支援).{0,16}(他|她|对方|玩家|[A-Za-z0-9_\-\u4e00-\u9fff]{1,32}).{0,16}(医院|治疗|包扎|看病|疗伤)", text):
+            return False
+        return True
 
     def _restricted_location_warning(self, target: sqlite3.Row, text: str) -> str:
         tags = set(loads(target["tags"], []))
@@ -1689,7 +2623,7 @@ class TextWorldService:
 
     def _action_risk_score(self, text: str) -> int:
         risk_keywords = (
-            ("战斗", "袭击", "硬闯", "追逐", "危险"),
+            ("战斗", "攻击", "袭击", "互殴", "殴打", "打架", "硬闯", "追逐", "危险"),
             ("潜入", "破解", "偷", "黑入", "绕过权限", "突破封锁"),
             ("暗部", "ITEM", "GROUP", "SCHOOL", "猎犬部队", "妹妹们"),
             ("没有窗户的大楼", "统括理事会", "树状图设计者", "滞空回线"),

@@ -21,10 +21,10 @@ class BatchNarrator:
 
     async def narrate_round(self, result: dict[str, Any], provider_id: str = "") -> dict[str, Any]:
         if not self.config.enable_llm:
-            return result
+            return self._clip_round_result(result)
         provider_id = self.config.provider_for("story", provider_id)
         if not provider_id:
-            return result
+            return self._clip_round_result(result)
         payload = {
             "task": "把程序已经结算好的群文游结果润色成可发送文本。必须一次性输出 JSON，程序会拆开发群公告和私聊。",
             "rules": [
@@ -37,6 +37,8 @@ class BatchNarrator:
                 "学舍之园、常盘台中学、研究所、没有窗户的大楼等地点有权限边界；程序没有允许时只能写外围、公开区或被拦下。",
                 "public_summary 只写群内公开信息，不泄露个人私密行动。",
                 "player_results 的 key 必须保持 QQ 号不变。",
+                f"public_summary 控制在 {self.config.public_summary_max_chars} 字以内；每个 player_results 文本控制在 {self.config.private_result_max_chars} 字以内。",
+                "如果程序结果包含生命/精力下降、真实冲突、互殴、袭击或高风险受伤，要写出疼痛、狼狈、治疗压力、警备风险等后果，不能写成小孩子过家家或轻飘飘的玩闹；但不要写血腥猎奇细节。",
                 "文字风格是《某魔法的禁书目录》学园都市同人群文游旁白，克制、有画面感，不自称 AI。",
             ],
             "input": result,
@@ -53,7 +55,10 @@ class BatchNarrator:
             )
             text = (getattr(resp, "completion_text", None) or str(resp)).strip()
             parsed = self._parse_json(text)
-            public_summary = self._clip(str(parsed.get("public_summary") or result.get("public_summary") or "").strip(), 1800)
+            public_summary = self._clip(
+                str(parsed.get("public_summary") or result.get("public_summary") or "").strip(),
+                self.config.public_summary_max_chars,
+            )
             player_results = parsed.get("player_results") or {}
             if not isinstance(player_results, dict):
                 player_results = {}
@@ -62,15 +67,32 @@ class BatchNarrator:
             fallback_private = result.get("private_results") or {}
             if self.config.enable_ai_private_result:
                 merged["private_results"] = {
-                    str(qq): self._clip(str(player_results.get(str(qq)) or fallback).strip(), 1400)
+                    str(qq): self._clip(
+                        str(player_results.get(str(qq)) or fallback).strip(),
+                        self.config.private_result_max_chars,
+                    )
                     for qq, fallback in fallback_private.items()
                 }
             else:
                 merged["private_results"] = fallback_private
-            return merged
+            return self._clip_round_result(merged)
         except Exception as exc:
             logger.warning(f"[TextWorld] batch narration fallback: {exc}")
-            return result
+            return self._clip_round_result(result)
+
+    def _clip_round_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(result)
+        merged["public_summary"] = self._clip(
+            str(merged.get("public_summary") or "").strip(),
+            self.config.public_summary_max_chars,
+        )
+        private_results = merged.get("private_results") or {}
+        if isinstance(private_results, dict):
+            merged["private_results"] = {
+                str(qq): self._clip(str(text or "").strip(), self.config.private_result_max_chars)
+                for qq, text in private_results.items()
+            }
+        return merged
 
     async def normalize_character_card(
         self,

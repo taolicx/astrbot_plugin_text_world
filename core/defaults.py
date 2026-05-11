@@ -66,7 +66,7 @@ DEFAULT_LOCATIONS: dict[str, DefaultLocation] = {
         id="school_gate",
         name="第七学区某高中校门",
         description="上条当麻就读的某高中周边。公告栏、校车站和学生通勤人流密集，是普通学生最自然的行动起点。",
-        neighbors=["district_07", "main_road", "classroom", "library", "dorm", "futsukaichi_station"],
+        neighbors=["district_07", "main_road", "classroom", "library", "dorm", "futsukaichi_station", "plaza"],
         tags=["第七学区", "学校", "交通", "起点"],
     ),
     "main_road": DefaultLocation(

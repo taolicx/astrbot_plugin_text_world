@@ -87,10 +87,16 @@ class TextWorldDB:
 
     def run(self, fn: Callable[[sqlite3.Connection], T]) -> T:
         with self._lock:
-            with self.connect() as con:
+            con = self.connect()
+            try:
                 result = fn(con)
                 con.commit()
                 return result
+            except Exception:
+                con.rollback()
+                raise
+            finally:
+                con.close()
 
     def init(self, admin_username: str, admin_password: str) -> None:
         def work(con: sqlite3.Connection) -> None:

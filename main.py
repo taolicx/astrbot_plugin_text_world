@@ -19,7 +19,7 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.3.5"
+PLUGIN_VERSION = "0.4.1"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 MAP_IMAGE_FILES: tuple[str, ...] = (
@@ -52,6 +52,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "manual_settle": ("世界结算", "文游结算", "立即结算"),
     "manual_event": ("世界事件", "文游事件", "触发事件"),
     "web": ("世界后台", "文游后台"),
+    "bind_private": ("绑定文游私聊", "绑定世界私聊", "文游私聊绑定"),
 }
 
 GROUP_TEXT_COMMANDS = {
@@ -67,6 +68,33 @@ GROUP_TEXT_COMMANDS = {
     "manual_settle",
     "manual_event",
     "web",
+}
+
+PRIVATE_TEXT_COMMANDS = {
+    "help",
+    "template",
+    "status",
+    "map",
+    "pending",
+    "checkin",
+    "bind_private",
+    "open",
+    "create",
+    "action",
+    "manual_settle",
+    "manual_event",
+    "web",
+}
+
+PRIVATE_ALLOWED_COMMANDS = {
+    "help",
+    "template",
+    "action",
+    "status",
+    "map",
+    "pending",
+    "checkin",
+    "bind_private",
 }
 
 PAYLOAD_COMMANDS = {"create", "action", "manual_event"}
@@ -86,8 +114,8 @@ def help_text() -> str:
             "待结算：查看本轮提交数量",
             "签到：每日获得学都币",
             "绑定文游私聊：私聊 bot 后绑定个人结果和早八状态栏",
-            "私聊中也可直接使用：状态 / 地图 / 待结算 / 签到",
-            "世界开启后：群内普通聊天会被静默拦截，只回复文游指令",
+            "私聊绑定后也可直接使用：行动 / 状态 / 地图 / 待结算 / 签到",
+            "世界开启后：群内普通聊天会被静默拦截；私聊绑定后也只回复文游指令",
             "管理员：世界结算 / 世界事件 / 世界后台",
         ]
     )
@@ -140,10 +168,16 @@ class TextWorldPlugin(Star):
 
     @filter.command("世界开启", alias={"开启世界", "文游开启"})
     async def open_world(self, event: AstrMessageEvent):
+        if self._is_private_chat(event):
+            yield event.plain_result("世界开启需要在目标群里使用，私聊不能开启群世界。").stop_event()
+            return
         yield event.plain_result(await self._handle_open_world(event)).stop_event()
 
     @filter.command("创建角色", alias={"角色创建", "创建人物"})
     async def create_character(self, event: AstrMessageEvent):
+        if self._is_private_chat(event):
+            yield event.plain_result("创建角色请在要游玩的群里提交，私聊只用于绑定和查询。").stop_event()
+            return
         yield event.plain_result(await self._handle_create_character(event)).stop_event()
 
     @filter.command("行动", alias={"文游行动", "提交行动"})
@@ -173,28 +207,30 @@ class TextWorldPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     @filter.command("绑定文游私聊", alias={"绑定世界私聊", "文游私聊绑定"})
     async def bind_private(self, event: AstrMessageEvent):
-        count = await to_thread(self.service.bind_private, self._sender_id(event), self._origin(event))
-        if count == -1:
-            yield event.plain_result("检测到你在多个群世界里都有通过审核的角色，私聊里无法判断要绑定哪一个。请在对应群里只保留一个已审核角色后再试。").stop_event()
-            return
-        if count <= 0:
-            yield event.plain_result("还没有找到你的角色卡，请先在群里提交或让管理员绑定 QQ 号。").stop_event()
-            return
-        yield event.plain_result(f"已绑定文游私聊，关联角色数：{count}。").stop_event()
+        yield event.plain_result(await self._bind_private_text(event)).stop_event()
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界结算", alias={"文游结算", "立即结算"})
     async def manual_settle(self, event: AstrMessageEvent):
+        if self._is_private_chat(event):
+            yield event.plain_result("世界结算需要在目标群里使用，私聊不能结算群世界。").stop_event()
+            return
         yield event.plain_result(await self._handle_manual_settle(event)).stop_event()
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界事件", alias={"文游事件", "触发事件"})
     async def manual_event(self, event: AstrMessageEvent):
+        if self._is_private_chat(event):
+            yield event.plain_result("世界事件需要在目标群里使用，私聊不能触发群事件。").stop_event()
+            return
         yield event.plain_result(await self._handle_manual_event(event)).stop_event()
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界后台", alias={"文游后台"})
     async def web_url(self, event: AstrMessageEvent):
+        if self._is_private_chat(event):
+            yield event.plain_result("世界后台入口请在目标群里使用管理员指令查看。").stop_event()
+            return
         yield event.plain_result(
             f"文游后台：http://{self.cfg.web_host}:{self.cfg.web_port}\n默认管理员账号请看插件配置。"
         ).stop_event()
@@ -225,6 +261,47 @@ class TextWorldPlugin(Star):
             return
 
         msg = await self._handle_group_text_command(event, command["key"])
+        if msg:
+            yield event.plain_result(msg).stop_event()
+        else:
+            event.stop_event()
+
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE, priority=50)
+    async def world_private_listener(self, event: AstrMessageEvent):
+        if not self.cfg.enable_world_chat_silence:
+            return
+        command = self._parse_text_world_command(event, PRIVATE_TEXT_COMMANDS)
+        binding = await to_thread(
+            self.service.private_world_for_qq,
+            self._sender_id(event),
+            self._origin(event),
+        )
+        bound = bool(
+            binding
+            and not binding.get("ambiguous")
+            and str(binding.get("private_origin") or "") == self._origin(event)
+        )
+        if not bound and not command:
+            return
+
+        event.should_call_llm(False)
+        if not command:
+            event.stop_event()
+            return
+
+        if command["key"] not in PRIVATE_ALLOWED_COMMANDS:
+            yield event.plain_result(self._private_disallowed_command_text(command["key"])).stop_event()
+            return
+
+        if command["key"] == "map":
+            result = await self._handle_map_images(event)
+            if result:
+                yield result.stop_event()
+            else:
+                yield event.plain_result(await self._handle_map(event)).stop_event()
+            return
+
+        msg = await self._handle_private_text_command(event, command["key"])
         if msg:
             yield event.plain_result(msg).stop_event()
         else:
@@ -263,6 +340,46 @@ class TextWorldPlugin(Star):
             return f"文游后台：http://{self.cfg.web_host}:{self.cfg.web_port}\n默认管理员账号请看插件配置。"
         return ""
 
+    async def _handle_private_text_command(self, event: AstrMessageEvent, key: str) -> str:
+        if key == "help":
+            return help_text()
+        if key == "template":
+            return CHARACTER_CARD_TEMPLATE
+        if key == "action":
+            return await self._handle_submit_action(event)
+        if key == "status":
+            return await self._handle_status(event)
+        if key == "map":
+            return await self._handle_map(event)
+        if key == "pending":
+            return await self._handle_pending(event)
+        if key == "checkin":
+            return await self._handle_checkin(event)
+        if key == "bind_private":
+            return await self._bind_private_text(event)
+        return ""
+
+    async def _bind_private_text(self, event: AstrMessageEvent) -> str:
+        count = await to_thread(self.service.bind_private, self._sender_id(event), self._origin(event))
+        if count == -1:
+            return "检测到你在多个群世界里都有通过审核的角色，私聊里无法判断要绑定哪一个。请在对应群里只保留一个已审核角色后再试。"
+        if count <= 0:
+            return "还没有找到你的角色卡，请先在群里提交或让管理员绑定 QQ 号。"
+        return f"已绑定文游私聊，关联角色数：{count}。"
+
+    def _private_disallowed_command_text(self, key: str) -> str:
+        if key == "create":
+            return "创建角色请在要游玩的群里提交，私聊只用于绑定和查询。"
+        if key == "open":
+            return "世界开启需要在目标群里使用，私聊不能开启群世界。"
+        if key == "manual_settle":
+            return "世界结算需要在目标群里使用，私聊不能结算群世界。"
+        if key == "manual_event":
+            return "世界事件需要在目标群里使用，私聊不能触发群事件。"
+        if key == "web":
+            return "世界后台入口请在目标群里使用管理员指令查看。"
+        return "这个指令需要在群里使用。绑定后私聊支持：行动 / 状态 / 地图 / 待结算 / 签到。"
+
     async def _bound_group_id_for_private(self, event: AstrMessageEvent) -> str:
         if not self._is_private_chat(event):
             return ""
@@ -275,6 +392,8 @@ class TextWorldPlugin(Star):
             return ""
         if binding.get("ambiguous"):
             return "__ambiguous__"
+        if str(binding.get("private_origin") or "") != self._origin(event):
+            return ""
         return str(binding.get("group_id") or "")
 
     async def _command_group_id(
@@ -373,15 +492,19 @@ class TextWorldPlugin(Star):
         return normalized
 
     async def _handle_submit_action(self, event: AstrMessageEvent) -> str:
-        group_id = self._group_id(event)
+        group_id = await self._command_group_id(event, allow_private_binding=True)
+        if group_id == "__ambiguous__":
+            return "检测到你在多个群世界都有角色，私聊里无法判断要向哪一个世界提交行动。" + self._private_binding_hint()
         if not group_id:
-            return "行动需要在群里提交。"
-        self._last_event_by_group[group_id] = event
+            return "行动需要在群里提交；如果想私聊提交，请先私聊发送：绑定文游私聊。"
+        group_origin = "" if self._is_private_chat(event) else self._origin(event)
+        if group_origin:
+            self._last_event_by_group[group_id] = event
         text = self._command_payload(event, COMMAND_ALIASES["action"])
         ok, msg = await to_thread(
             self.service.submit_action,
             group_id,
-            self._origin(event),
+            group_origin,
             self._sender_id(event),
             text,
         )
@@ -525,7 +648,9 @@ class TextWorldPlugin(Star):
     ) -> bool:
         if event:
             try:
-                await event.send(event.plain_result(text))
+                for chunk in self._message_chunks(text):
+                    await event.send(event.plain_result(chunk))
+                    await self._message_chunk_sleep()
                 return True
             except Exception as exc:
                 logger.warning(f"[TextWorld] group send via event failed: {exc}")
@@ -569,7 +694,9 @@ class TextWorldPlugin(Star):
 
     async def _send_origin(self, origin: str, text: str) -> bool:
         try:
-            await self.context.send_message(origin, MessageChain([Plain(text)]))
+            for chunk in self._message_chunks(text):
+                await self.context.send_message(origin, MessageChain([Plain(chunk)]))
+                await self._message_chunk_sleep()
             return True
         except Exception as exc:
             logger.warning(f"[TextWorld] send origin failed: {exc}")
@@ -580,11 +707,44 @@ class TextWorldPlugin(Star):
         if not bot or not hasattr(bot, "send_private_msg"):
             return False
         try:
-            await bot.send_private_msg(user_id=int(qq_id), message=[{"type": "text", "data": {"text": text}}])
+            for chunk in self._message_chunks(text):
+                await bot.send_private_msg(user_id=int(qq_id), message=[{"type": "text", "data": {"text": chunk}}])
+                await self._message_chunk_sleep()
             return True
         except Exception as exc:
             logger.warning(f"[TextWorld] onebot private send failed: {exc}")
             return False
+
+    def _message_chunks(self, text: str) -> list[str]:
+        text = str(text or "")
+        limit = max(300, int(self.cfg.message_chunk_chars or 1800))
+        if len(text) <= limit:
+            return [text]
+        chunks: list[str] = []
+        remaining = text
+        payload_limit = max(120, limit - 16)
+        while remaining:
+            if len(remaining) <= payload_limit:
+                chunks.append(remaining)
+                break
+            cut = remaining.rfind("\n", 0, payload_limit + 1)
+            if cut < int(payload_limit * 0.45):
+                cut = remaining.rfind("。", 0, payload_limit + 1)
+            if cut < int(payload_limit * 0.45):
+                cut = payload_limit
+            chunk = remaining[:cut].strip()
+            if chunk:
+                chunks.append(chunk)
+            remaining = remaining[cut:].lstrip()
+        total = len(chunks)
+        if total <= 1:
+            return chunks
+        return [f"({idx}/{total})\n{chunk}" for idx, chunk in enumerate(chunks, 1)]
+
+    async def _message_chunk_sleep(self) -> None:
+        delay = int(self.cfg.message_chunk_delay_ms or 0)
+        if delay > 0:
+            await asyncio.sleep(delay / 1000)
 
     async def _provider_id(self, event: AstrMessageEvent | None) -> str:
         if not event:
@@ -619,10 +779,28 @@ class TextWorldPlugin(Star):
                 return True
         except Exception:
             pass
+        try:
+            message_type = event.get_message_type()
+            value = getattr(message_type, "value", message_type)
+            if str(value or "").lower() in {"friendmessage", "private", "private_message", "friend_message"}:
+                return True
+        except Exception:
+            pass
+        origin = self._origin(event).lower()
+        if any(marker in origin for marker in (":friendmessage:", ":private:", ":private_message:", ":friend_message:")):
+            return True
         message_obj = getattr(event, "message_obj", None)
-        message_type = getattr(message_obj, "type", None)
-        value = getattr(message_type, "value", message_type)
-        return str(value or "").lower() in {"friendmessage", "private", "private_message", "friend_message"}
+        for attr in ("type", "message_type", "detail_type", "chat_type"):
+            message_type = getattr(message_obj, attr, None)
+            value = getattr(message_type, "value", message_type)
+            if str(value or "").lower() in {"friendmessage", "private", "private_message", "friend_message"}:
+                return True
+        try:
+            if not event.get_group_id() and str(event.get_session_id() or "") == str(event.get_sender_id() or ""):
+                return True
+        except Exception:
+            pass
+        return False
 
     def _sender_id(self, event: AstrMessageEvent) -> str:
         try:
@@ -652,14 +830,19 @@ class TextWorldPlugin(Star):
                 return text[len(name):].strip()
         return text
 
-    def _parse_text_world_command(self, event: AstrMessageEvent) -> dict[str, str]:
+    def _parse_text_world_command(
+        self,
+        event: AstrMessageEvent,
+        command_keys: set[str] | None = None,
+    ) -> dict[str, str]:
         text = (getattr(event, "message_str", "") or "").strip()
         if not text:
             return {}
         text = self._strip_wake_prefixes(text)
+        keys = command_keys or GROUP_TEXT_COMMANDS
         candidates = [
             (key, name)
-            for key in GROUP_TEXT_COMMANDS
+            for key in keys
             for name in COMMAND_ALIASES[key]
         ]
         candidates.sort(key=lambda item: len(item[1]), reverse=True)

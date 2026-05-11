@@ -26,6 +26,25 @@ class TextWorldConfig:
             5, self._int(raw, "scheduler_poll_seconds", 30)
         )
         self.max_action_length = max(20, self._int(raw, "max_action_length", 120))
+        self.public_summary_max_chars = max(
+            300, min(12000, self._int(raw, "public_summary_max_chars", 1800))
+        )
+        self.private_result_max_chars = max(
+            300, min(12000, self._int(raw, "private_result_max_chars", 1400))
+        )
+        self.message_chunk_chars = max(
+            300, min(4000, self._int(raw, "message_chunk_chars", 1800))
+        )
+        self.message_chunk_delay_ms = max(
+            0, min(5000, self._int(raw, "message_chunk_delay_ms", 350))
+        )
+        self.pvp_damage_min = max(0, min(80, self._int(raw, "pvp_damage_min", 10)))
+        self.pvp_damage_max = max(
+            self.pvp_damage_min, min(95, self._int(raw, "pvp_damage_max", 28))
+        )
+        self.risk_damage_multiplier = max(
+            1, min(5, self._int(raw, "risk_damage_multiplier", 2))
+        )
         self.start_money = max(0, self._int(raw, "start_money", 100))
         self.web_enabled = self._bool(raw, "web_enabled", True)
         self.web_host = str(raw.get("web_host", "127.0.0.1") or "127.0.0.1").strip()
