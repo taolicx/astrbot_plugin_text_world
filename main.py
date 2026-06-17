@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,7 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.4.1"
+PLUGIN_VERSION = "0.4.4"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 MAP_IMAGE_FILES: tuple[str, ...] = (
@@ -46,12 +47,15 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "create": ("创建角色", "角色创建", "创建人物"),
     "action": ("行动", "文游行动", "提交行动"),
     "status": ("状态", "我的状态", "状态栏"),
+    "tasks": ("任务", "今日任务", "引导"),
     "map": ("地图", "世界地图"),
     "pending": ("待结算", "本轮行动", "行动列表"),
     "checkin": ("签到", "每日签到"),
     "manual_settle": ("世界结算", "文游结算", "立即结算"),
     "manual_event": ("世界事件", "文游事件", "触发事件"),
     "web": ("世界后台", "文游后台"),
+    "audit": ("审核角色", "角色审核", "批准角色", "通过角色", "拒绝角色"),
+    "pending_cards": ("待审核角色", "待审核列表", "角色审核列表"),
     "bind_private": ("绑定文游私聊", "绑定世界私聊", "文游私聊绑定"),
 }
 
@@ -62,18 +66,22 @@ GROUP_TEXT_COMMANDS = {
     "create",
     "action",
     "status",
+    "tasks",
     "map",
     "pending",
     "checkin",
     "manual_settle",
     "manual_event",
     "web",
+    "audit",
+    "pending_cards",
 }
 
 PRIVATE_TEXT_COMMANDS = {
     "help",
     "template",
     "status",
+    "tasks",
     "map",
     "pending",
     "checkin",
@@ -84,6 +92,8 @@ PRIVATE_TEXT_COMMANDS = {
     "manual_settle",
     "manual_event",
     "web",
+    "audit",
+    "pending_cards",
 }
 
 PRIVATE_ALLOWED_COMMANDS = {
@@ -91,13 +101,14 @@ PRIVATE_ALLOWED_COMMANDS = {
     "template",
     "action",
     "status",
+    "tasks",
     "map",
     "pending",
     "checkin",
     "bind_private",
 }
 
-PAYLOAD_COMMANDS = {"create", "action", "manual_event"}
+PAYLOAD_COMMANDS = {"create", "action", "manual_event", "audit"}
 
 
 def help_text() -> str:
@@ -105,18 +116,19 @@ def help_text() -> str:
         [
             "【学园都市文游】",
             "世界开启：在当前群登记世界",
-            "角色卡模板：查看完整创建格式，也可补充穿衣着装和简易身材",
-            "创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级 [| 穿衣着装 | 简易身材]：提交角色卡，需管理员审核",
+            "角色卡模板：查看完整创建格式，也可补充性别、穿衣着装和简易身材",
+            "创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级 [| 性别 | 穿衣着装 | 简易身材]：提交角色卡，需管理员审核",
             "创建角色 我叫星野遥，是第七学区某高中学生，能力是微弱电磁感应：也支持自然语言提交",
             "行动 内容：提交本小时行动",
             "状态：查看自己的状态栏",
+            "任务：查看当前身份引导、可做任务和成长方向",
             "地图：查看当前位置和可前往地点",
             "待结算：查看本轮提交数量",
             "签到：每日获得学都币",
             "绑定文游私聊：私聊 bot 后绑定个人结果和早八状态栏",
-            "私聊绑定后也可直接使用：行动 / 状态 / 地图 / 待结算 / 签到",
+            "私聊绑定后也可直接使用：行动 / 状态 / 任务 / 地图 / 待结算 / 签到",
             "世界开启后：群内普通聊天会被静默拦截；私聊绑定后也只回复文游指令",
-            "管理员：世界结算 / 世界事件 / 世界后台",
+            "管理员：待审核角色 / 审核角色 游戏名或QQ 通过 / 审核角色 游戏名或QQ 拒绝 / 世界结算 / 世界事件 / 世界后台",
         ]
     )
 
@@ -188,6 +200,10 @@ class TextWorldPlugin(Star):
     async def status(self, event: AstrMessageEvent):
         yield event.plain_result(await self._handle_status(event)).stop_event()
 
+    @filter.command("任务", alias={"今日任务", "引导"})
+    async def tasks(self, event: AstrMessageEvent):
+        yield event.plain_result(await self._handle_tasks(event)).stop_event()
+
     @filter.command("地图", alias={"世界地图"})
     async def map_cmd(self, event: AstrMessageEvent):
         result = await self._handle_map_images(event)
@@ -234,6 +250,22 @@ class TextWorldPlugin(Star):
         yield event.plain_result(
             f"文游后台：http://{self.cfg.web_host}:{self.cfg.web_port}\n默认管理员账号请看插件配置。"
         ).stop_event()
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("待审核角色", alias={"待审核列表", "角色审核列表"})
+    async def pending_cards(self, event: AstrMessageEvent):
+        if self._is_private_chat(event):
+            yield event.plain_result("待审核角色列表需要在目标群里查看。").stop_event()
+            return
+        yield event.plain_result(await self._handle_pending_cards(event)).stop_event()
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("审核角色", alias={"角色审核", "批准角色", "通过角色", "拒绝角色"})
+    async def audit_character(self, event: AstrMessageEvent):
+        if self._is_private_chat(event):
+            yield event.plain_result("角色审核需要在目标群里使用。").stop_event()
+            return
+        yield event.plain_result(await self._handle_audit_character(event)).stop_event()
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE, priority=50)
     async def world_group_listener(self, event: AstrMessageEvent):
@@ -320,6 +352,8 @@ class TextWorldPlugin(Star):
             return await self._handle_submit_action(event)
         if key == "status":
             return await self._handle_status(event)
+        if key == "tasks":
+            return await self._handle_tasks(event)
         if key == "map":
             return await self._handle_map(event)
         if key == "pending":
@@ -338,6 +372,14 @@ class TextWorldPlugin(Star):
             if not self._is_admin(event):
                 return "权限不足，只有管理员可以查看后台入口。"
             return f"文游后台：http://{self.cfg.web_host}:{self.cfg.web_port}\n默认管理员账号请看插件配置。"
+        if key == "pending_cards":
+            if not self._is_admin(event):
+                return "权限不足，只有管理员可以查看待审核角色。"
+            return await self._handle_pending_cards(event)
+        if key == "audit":
+            if not self._is_admin(event):
+                return "权限不足，只有管理员可以审核角色卡。"
+            return await self._handle_audit_character(event)
         return ""
 
     async def _handle_private_text_command(self, event: AstrMessageEvent, key: str) -> str:
@@ -349,6 +391,8 @@ class TextWorldPlugin(Star):
             return await self._handle_submit_action(event)
         if key == "status":
             return await self._handle_status(event)
+        if key == "tasks":
+            return await self._handle_tasks(event)
         if key == "map":
             return await self._handle_map(event)
         if key == "pending":
@@ -378,7 +422,9 @@ class TextWorldPlugin(Star):
             return "世界事件需要在目标群里使用，私聊不能触发群事件。"
         if key == "web":
             return "世界后台入口请在目标群里使用管理员指令查看。"
-        return "这个指令需要在群里使用。绑定后私聊支持：行动 / 状态 / 地图 / 待结算 / 签到。"
+        if key in {"audit", "pending_cards"}:
+            return "角色审核需要在目标群里由管理员使用。"
+        return "这个指令需要在群里使用。绑定后私聊支持：行动 / 状态 / 任务 / 地图 / 待结算 / 签到。"
 
     async def _bound_group_id_for_private(self, event: AstrMessageEvent) -> str:
         if not self._is_private_chat(event):
@@ -443,6 +489,7 @@ class TextWorldPlugin(Star):
             faction=normalized["faction"],
             ability=normalized["ability"],
             power_level=normalized["power_level"],
+            gender=normalized.get("gender", ""),
             outfit=normalized.get("outfit", ""),
             body_profile=normalized.get("body_profile", ""),
         )
@@ -455,6 +502,7 @@ class TextWorldPlugin(Star):
                     f"阵营：{normalized['faction']}",
                     f"能力：{normalized['ability']}",
                     f"能力等级：{normalized['power_level']}",
+                    f"性别：{normalized.get('gender') or '未提取'}",
                     f"穿衣着装：{normalized.get('outfit') or '未提取'}",
                     f"简易身材：{normalized.get('body_profile') or '未提取'}",
                     msg,
@@ -464,16 +512,18 @@ class TextWorldPlugin(Star):
         return msg
 
     async def _parse_character_payload(self, payload: str, sender_id: str, provider_id: str) -> dict[str, str]:
-        parts = [part.strip() for part in payload.replace("｜", "|").split("|", 6)]
+        parts = [part.strip() for part in payload.replace("｜", "|").split("|", 7)]
         if len(parts) >= 2:
+            has_gender_field = len(parts) >= 8
             return {
                 "game_name": parts[0],
                 "identity": parts[1],
                 "faction": parts[2] if len(parts) >= 3 else "",
                 "ability": parts[3] if len(parts) >= 4 else "",
                 "power_level": parts[4] if len(parts) >= 5 else "Level 3",
-                "outfit": parts[5] if len(parts) >= 6 else "",
-                "body_profile": parts[6] if len(parts) >= 7 else "",
+                "gender": parts[5] if has_gender_field else "",
+                "outfit": parts[6] if has_gender_field else (parts[5] if len(parts) >= 6 else ""),
+                "body_profile": parts[7] if has_gender_field else (parts[6] if len(parts) >= 7 else ""),
                 "_source": "structured",
             }
         if not self.cfg.enable_natural_character_card:
@@ -483,6 +533,7 @@ class TextWorldPlugin(Star):
                 "faction": "",
                 "ability": "",
                 "power_level": "Level 3",
+                "gender": "",
                 "outfit": "",
                 "body_profile": "",
                 "_source": "structured",
@@ -517,6 +568,14 @@ class TextWorldPlugin(Star):
         if not group_id:
             return "没有找到已绑定的群世界。" + self._private_binding_hint()
         return await to_thread(self.service.get_status_by_qq, group_id, self._sender_id(event))
+
+    async def _handle_tasks(self, event: AstrMessageEvent) -> str:
+        group_id = await self._command_group_id(event, allow_private_binding=True)
+        if group_id == "__ambiguous__":
+            return "检测到你在多个群世界都有角色，私聊里无法判断要查看哪一个。" + self._private_binding_hint()
+        if not group_id:
+            return "没有找到已绑定的群世界。" + self._private_binding_hint()
+        return await to_thread(self.service.task_text, group_id, self._sender_id(event))
 
     async def _handle_map(self, event: AstrMessageEvent) -> str:
         group_id = await self._command_group_id(event, allow_private_binding=True)
@@ -563,6 +622,80 @@ class TextWorldPlugin(Star):
             return "没有找到已绑定的群世界。" + self._private_binding_hint()
         ok, msg = await to_thread(self.service.checkin, group_id, self._sender_id(event))
         return msg
+
+    async def _handle_pending_cards(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在要审核角色卡的群里使用。"
+        rows = await to_thread(self.service.pending_character_cards, group_id, 12)
+        if not rows:
+            return "当前没有待审核角色卡。"
+        lines = [f"【待审核角色】共显示 {len(rows)} 条"]
+        for row in rows:
+            gender = f" / {row.get('gender')}" if row.get("gender") else ""
+            lines.append(
+                f"- {row['game_name']}（QQ {row['qq_id']}）：{row.get('identity') or '未填身份'}，"
+                f"{row.get('faction') or '无阵营'}，{row.get('ability') or '未填能力'} - {row.get('power_level') or '未填等级'}{gender}"
+            )
+        lines.append("审核：审核角色 游戏名或QQ 通过；拒绝：审核角色 游戏名或QQ 拒绝。")
+        return "\n".join(lines)
+
+    async def _handle_audit_character(self, event: AstrMessageEvent) -> str:
+        group_id = self._group_id(event)
+        if not group_id:
+            return "请在要审核角色卡的群里使用。"
+        payload = self._command_payload(event, COMMAND_ALIASES["audit"])
+        query, status = self._parse_audit_payload(payload, self._audit_default_status(event))
+        if not query:
+            return "格式：审核角色 游戏名或QQ 通过\n也可以：审核角色 游戏名或QQ 拒绝 / 退回\n先看列表：待审核角色"
+        try:
+            row = await to_thread(self.service.admin_audit_character, group_id, query, status)
+        except Exception as exc:
+            return f"审核失败：{exc}"
+        status_label = self.service.audit_label(str(row.get("audit_status") or ""))
+        return "\n".join(
+            [
+                f"已更新角色卡审核状态：{status_label}",
+                f"角色：{row.get('game_name')}（QQ {row.get('qq_id')}）",
+                f"身份：{row.get('identity') or '未设定'}",
+                f"阵营：{row.get('faction') or '无'}",
+                f"能力：{row.get('ability') or '未设定'} - {row.get('power_level') or '未设定'}",
+            ]
+        )
+
+    def _audit_default_status(self, event: AstrMessageEvent) -> str:
+        text = self._strip_wake_prefixes((getattr(event, "message_str", "") or "").strip())
+        if any(text.startswith(name) for name in ("拒绝角色",)):
+            return "rejected"
+        if any(text.startswith(name) for name in ("通过角色", "批准角色")):
+            return "approved"
+        return "approved"
+
+    def _parse_audit_payload(self, payload: str, default_status: str = "approved") -> tuple[str, str]:
+        text = re.sub(r"\s+", " ", str(payload or "").strip())
+        if not text:
+            return "", default_status
+        status_words = (
+            "不通过",
+            "通过",
+            "批准",
+            "同意",
+            "拒绝",
+            "驳回",
+            "退回",
+            "待审核",
+            "approved",
+            "approve",
+            "rejected",
+            "reject",
+            "pending",
+        )
+        for word in status_words:
+            pattern = rf"(^|\s){re.escape(word)}(\s|$)"
+            if re.search(pattern, text, re.I):
+                query = re.sub(pattern, " ", text, count=1, flags=re.I).strip()
+                return query, word
+        return text, default_status
 
     async def _handle_manual_settle(self, event: AstrMessageEvent) -> str:
         group_id = self._group_id(event)
@@ -615,15 +748,28 @@ class TextWorldPlugin(Star):
             result = await to_thread(self.service.settle_round, group_id, force_event)
             provider_id = await self._provider_id(event) if event else ""
             result = await self.narrator.narrate_round(result, provider_id)
-            group_sent = await self._send_group(group_id, result["public_summary"], event)
-            private_sent, private_total = await self._send_private_results(group_id, result["private_results"], event)
-            if not group_sent:
-                logger.warning(f"[TextWorld] round {result['round_no']} public summary for group {group_id} was not sent.")
+            private_results = result.get("private_results") or {}
+            if self.cfg.include_public_summary_in_private:
+                private_results = self.service.merge_public_summary_into_private_results(
+                    int(result["round_no"]),
+                    str(result.get("public_summary") or ""),
+                    private_results,
+                )
+            group_sent = False
+            if self.cfg.send_public_summary_to_group:
+                group_sent = await self._send_group(group_id, result["public_summary"], event)
+                if not group_sent:
+                    logger.warning(f"[TextWorld] round {result['round_no']} public summary for group {group_id} was not sent.")
+            else:
+                logger.info(f"[TextWorld] round {result['round_no']} public summary for group {group_id} skipped by config.")
+            private_sent, private_total = await self._send_private_results(group_id, private_results, event)
             if private_sent < private_total:
                 logger.warning(f"[TextWorld] round {result['round_no']} private results for group {group_id}: {private_sent}/{private_total} sent.")
-            suffix = "" if group_sent else "（群公告发送失败，请检查 bot 权限或群 origin）"
+            suffix = "公共摘要已发送到群聊。" if group_sent else "群聊剧情公告已关闭，仅私聊发送参与玩家。"
             if private_total:
                 suffix += f" 私聊发送 {private_sent}/{private_total}。"
+            else:
+                suffix += " 当前没有已审核玩家可接收私聊。"
             return f"第 {result['round_no']} 轮结算完成。{suffix}"
         except Exception as exc:
             logger.exception(f"[TextWorld] settle failed: {exc}")
@@ -646,6 +792,7 @@ class TextWorldPlugin(Star):
         text: str,
         event: AstrMessageEvent | None,
     ) -> bool:
+        text = self._sendable_text(text, "【学园都市更新】\n本轮结算完成，但公共摘要文本为空，请查看后台历史。")
         if event:
             try:
                 for chunk in self._message_chunks(text):
@@ -679,6 +826,7 @@ class TextWorldPlugin(Star):
         text: str,
         event: AstrMessageEvent | None,
     ) -> bool:
+        text = self._sendable_text(text, "【个人结果】\n本轮结果已记录，但私聊文本为空，请联系管理员查看后台历史。")
         row = await to_thread(
             self.db.fetch_one,
             "SELECT private_origin FROM characters WHERE group_id=? AND qq_id=?",
@@ -693,6 +841,7 @@ class TextWorldPlugin(Star):
         return False
 
     async def _send_origin(self, origin: str, text: str) -> bool:
+        text = self._sendable_text(text, "【文游消息】\n消息文本为空。")
         try:
             for chunk in self._message_chunks(text):
                 await self.context.send_message(origin, MessageChain([Plain(chunk)]))
@@ -703,6 +852,7 @@ class TextWorldPlugin(Star):
             return False
 
     async def _send_onebot_private(self, event: AstrMessageEvent, qq_id: str, text: str) -> bool:
+        text = self._sendable_text(text, "【文游私聊】\n消息文本为空。")
         bot = getattr(event, "bot", None)
         if not bot or not hasattr(bot, "send_private_msg"):
             return False
@@ -718,6 +868,8 @@ class TextWorldPlugin(Star):
     def _message_chunks(self, text: str) -> list[str]:
         text = str(text or "")
         limit = max(300, int(self.cfg.message_chunk_chars or 1800))
+        if not text.strip():
+            return ["【文游消息】\n消息文本为空。"]
         if len(text) <= limit:
             return [text]
         chunks: list[str] = []
@@ -745,6 +897,12 @@ class TextWorldPlugin(Star):
         delay = int(self.cfg.message_chunk_delay_ms or 0)
         if delay > 0:
             await asyncio.sleep(delay / 1000)
+
+    def _sendable_text(self, text: Any, fallback: str) -> str:
+        value = str(text or "").strip()
+        if value:
+            return value
+        return str(fallback or "【文游消息】\n消息文本为空。").strip()
 
     async def _provider_id(self, event: AstrMessageEvent | None) -> str:
         if not event:

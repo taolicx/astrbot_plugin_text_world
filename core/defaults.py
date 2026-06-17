@@ -41,10 +41,10 @@ class DefaultEventPreset:
     effect: dict[str, Any] = field(default_factory=dict)
 
 
-CHARACTER_CARD_TEMPLATE = """创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级 [| 穿衣着装 | 简易身材]
+CHARACTER_CARD_TEMPLATE = """创建角色 游戏名 | 身份 | 阵营 | 能力 | 能力等级 [| 性别 | 穿衣着装 | 简易身材]
 
 也可以直接自然语言提交，例如：
-创建角色 我叫星野遥，是第七学区某高中学生兼风纪委员见习，能力是微弱电磁感应，Level 2。
+创建角色 我叫星野遥，女，是第七学区某高中学生兼风纪委员见习，能力是微弱电磁感应，Level 2。
 
 字段说明：
 - 游戏名：前端登录账号也会默认使用这个名字。
@@ -52,12 +52,13 @@ CHARACTER_CARD_TEMPLATE = """创建角色 游戏名 | 身份 | 阵营 | 能力 |
 - 阵营：普通学生、风纪委员 Judgment、警备员 Anti-Skill、研究机构、Skill-Out、暗部边缘、留学生、魔法侧访客、无阵营等。
 - 能力：按学园都市“个人现实/AIM扩散力场”的超能力体系写清表现、限制和代价；通常一名能力者只有一种主能力。
 - 能力等级：Level 0 / Level 1 / Level 2 / Level 3 / Level 4。Level 5 属于学园都市仅七人的顶级超能力者，建议只允许管理员特批；Level 6/绝对能力者禁止创建。
+- 性别：男 / 女 / 其他 / 未公开均可，主要用于状态栏和剧情称呼。
 - 穿衣着装：常用制服、外套、标志性穿搭等，方便剧情描写。
 - 简易身材：身高、体型、发型等低敏外观数据，方便前端状态栏展示。
 - 注意：学舍之园、研究所、没有窗户的大楼、暗部核心事件都有权限边界，角色卡不能默认拥有自由出入或调动权限。
 
 示例：
-创建角色 星野遥 | 第七学区某高中学生，风纪委员见习 | 风纪委员 Judgment | 微弱电磁感应，可察觉近距离异常电流，连续使用会头痛 | Level 2 | 常规学生制服 | 160cm，偏瘦，黑长发
+创建角色 星野遥 | 第七学区某高中学生，风纪委员见习 | 风纪委员 Judgment | 微弱电磁感应，可察觉近距离异常电流，连续使用会头痛 | Level 2 | 女 | 常规学生制服 | 160cm，偏瘦，黑长发
 """
 
 
@@ -782,11 +783,12 @@ DEFAULT_NPCS: dict[str, DefaultNPC] = {
 
 
 DEFAULT_SHOP_ITEMS = [
-    DefaultShopItem("矿泉水", "补充水分的普通瓶装水，自动贩卖机常见。", 6, {"water": 24}),
-    DefaultShopItem("营养果冻", "农业大楼供应链出品，方便携带。", 12, {"water": 8, "satiety": 16}),
-    DefaultShopItem("学生便当", "第四学区联营窗口供应的普通便当。", 22, {"satiety": 34, "mood": 1}),
-    DefaultShopItem("校园午餐券", "可在食堂兑换一份热餐。", 30, {"satiety": 40, "mood": 2}),
-    DefaultShopItem("能量饮料", "短时间补充精力，但不适合连续饮用。", 18, {"energy": 18, "water": 5, "mood": -1}),
+    DefaultShopItem("矿泉水", "补充水分的普通瓶装水，自动贩卖机常见。", 6, {"water": 100}),
+    DefaultShopItem("营养果冻", "农业大楼供应链出品，方便携带。", 12, {"water": 45, "satiety": 65}),
+    DefaultShopItem("学生便当", "第四学区联营窗口供应的普通便当。", 22, {"satiety": 100, "water": 12, "mood": 1}),
+    DefaultShopItem("校园午餐券", "可在食堂兑换一份热餐。", 30, {"satiety": 100, "water": 20, "mood": 2}),
+    DefaultShopItem("拉面", "学生街常见的热汤拉面，便宜顶饱，附带基础汤水。", 28, {"satiety": 100, "water": 35, "mood": 2}),
+    DefaultShopItem("能量饮料", "短时间补充精力，但不适合连续饮用。", 18, {"energy": 25, "water": 40, "mood": -1}),
     DefaultShopItem("便携绷带", "处理擦伤和轻微割伤的基础医疗用品。", 25, {"hp": 12}),
     DefaultShopItem("医疗凝胶贴", "医院与便利店都能买到的进阶外伤处理用品。", 45, {"hp": 24}),
     DefaultShopItem("通勤一日券", "校车、公交和单轨通勤券，适合跨学区行动前准备。", 15, {"energy": 4, "mood": 1}),
@@ -794,13 +796,13 @@ DEFAULT_SHOP_ITEMS = [
     DefaultShopItem("便携终端电池", "给手机和小型终端补电的电池包。", 20, {"energy": 8}),
     DefaultShopItem("研究区临时通行证", "只对公开参观区有效的临时通行证。", 80, {"mood": 1}),
     DefaultShopItem("防水学生包", "能放入随身物品的耐用学生包。", 60, {"mood": 1}),
-    DefaultShopItem("家庭餐厅套餐券", "第七学区家庭餐厅可用，适合会面或恢复心情。", 28, {"satiety": 30, "mood": 3}),
+    DefaultShopItem("家庭餐厅套餐券", "第七学区家庭餐厅可用，适合会面或恢复心情。", 28, {"satiety": 100, "water": 20, "mood": 3}),
     DefaultShopItem("Seventh Mist购物券", "大型商场通用小额券，购买日用品时很方便。", 50, {"mood": 2}),
     DefaultShopItem("七福神商店街折扣券", "旧式商店街小店通用，可换取便当或日用品折扣。", 18, {"satiety": 12, "mood": 2}),
     DefaultShopItem("地下铁一日券", "二日站等交通节点可用，跨区移动前准备更省力。", 20, {"energy": 6, "mood": 1}),
     DefaultShopItem("书库公开检索点数", "只能查询公开权限资料，无法突破研究所或统括理事会权限。", 35, {"mood": 2}),
     DefaultShopItem("定位卡", "一次性道具。行动中使用后可查询指定 NPC 当前所在地点，只给情报，不传送角色。", 100, {"item_type": "npc_locator"}),
-    DefaultShopItem("死亡保护卡", "一次性保险。角色濒死或死亡惩罚触发时优先消耗，免除本次经验惩罚。", 120, {"death_protection": 1}),
+    DefaultShopItem("死亡保护卡", "一次性保险。角色濒死时优先消耗，保留 1 点生命并减轻后续复苏压力；濒死本身不再扣除经验。", 120, {"death_protection": 1}),
     DefaultShopItem("能力重抽凭证", "管理员协助用凭证。可申请重新刷新能力类别，不改变当前等级和经验。", 320, {"admin_ticket": "reroll_ability"}),
     DefaultShopItem("人设重置卡", "管理员协助用凭证。可申请重新整理身份和人设，不改变能力等级和经验。", 320, {"admin_ticket": "rewrite_profile"}),
     DefaultShopItem("随机词条卡", "昂贵成长道具。管理员可根据奖池为角色添加一个小幅永久增益词条。", 520, {"trait_draw": 1}),

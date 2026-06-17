@@ -26,24 +26,28 @@ class BatchNarrator:
         if not provider_id:
             return self._clip_round_result(result)
         payload = {
-            "task": "把程序已经结算好的群文游结果润色成可发送文本。必须一次性输出 JSON，程序会拆开发群公告和私聊。",
+            "task": "把程序已经结算好的群文游结果润色成可发送文本。必须一次性输出 JSON，程序会把公共摘要和个人结果私聊给参与玩家。",
             "rules": [
                 "不得更改程序给出的地点、状态、货币、背包、相遇名单。",
                 "不得让角色瞬移，不得新增未结算的奖励或伤害。",
                 "不得让玩家随意成为原作主角、Level 5、暗部核心或统括理事会高层。",
+                "必须使用 input.time_context 作为唯一世界时间；昼夜、营业、上课、放学、宵禁、人流和交通都要跟现实北京时间一致。",
+                "如果 input.time_context.phase 是夜间或深夜，不要写成上午、午休、上课中或太阳正盛；如果是上午/下午，也不要写成深夜。",
                 "科学侧事件优先；魔法侧只能作为少量传闻、访客或异常线索，不能突然改写主线。",
                 "原作人物出现时保持克制，不能替玩家完成行动目标。",
                 "暗部、妹妹们、幻想御手、滞空回线、树状图设计者、魔法侧等核心线索只能写成公开传闻、异常痕迹或调查碎片，不能直接给出终局真相。",
                 "学舍之园、常盘台中学、研究所、没有窗户的大楼等地点有权限边界；程序没有允许时只能写外围、公开区或被拦下。",
-                "public_summary 只写群内公开信息，不泄露个人私密行动。",
+                "public_summary 只写参与玩家都可知道的大事件、新闻和传闻，不泄露个人私密行动；它默认会私聊给已审核玩家，不再发群。",
                 "player_results 的 key 必须保持 QQ 号不变。",
                 f"public_summary 控制在 {self.config.public_summary_max_chars} 字以内；每个 player_results 文本控制在 {self.config.private_result_max_chars} 字以内。",
-                "如果程序结果包含生命/精力下降、真实冲突、互殴、袭击或高风险受伤，要写出疼痛、狼狈、治疗压力、警备风险等后果，不能写成小孩子过家家或轻飘飘的玩闹；但不要写血腥猎奇细节。",
+                f"冲突叙事强度为 {getattr(self.config, 'conflict_narrative_intensity', 2)}/3。这个值越高，真实冲突越要写得严肃、压迫、有后果。",
+                "如果程序结果包含生命/精力下降、真实冲突、互殴、袭击或高风险受伤，要写出疼痛、失衡、出血、狼狈、治疗压力、警备风险等后果，不能写成小孩子过家家、玩闹或轻描淡写。",
+                "可以描写非露骨暴力后果，例如淤青、破口、血迹、眩晕、衣物损坏、被迫撤离、送医、风纪委员/警备员介入；不要写器官、肢解、虐待猎奇或为了血腥而血腥。",
                 "文字风格是《某魔法的禁书目录》学园都市同人群文游旁白，克制、有画面感，不自称 AI。",
             ],
             "input": result,
             "output_schema": {
-                "public_summary": "群公告文本",
+                "public_summary": "公共事件/新闻摘要文本，默认私聊给参与玩家",
                 "player_results": {"QQ号": "该玩家私聊文本"},
             },
         }
@@ -63,14 +67,14 @@ class BatchNarrator:
             if not isinstance(player_results, dict):
                 player_results = {}
             merged = dict(result)
-            merged["public_summary"] = public_summary or result.get("public_summary", "")
+            merged["public_summary"] = self._fallback_if_bad(
+                public_summary,
+                result.get("public_summary", ""),
+            )
             fallback_private = result.get("private_results") or {}
             if self.config.enable_ai_private_result:
                 merged["private_results"] = {
-                    str(qq): self._clip(
-                        str(player_results.get(str(qq)) or fallback).strip(),
-                        self.config.private_result_max_chars,
-                    )
+                    str(qq): self._clip(self._fallback_if_bad(player_results.get(str(qq)), fallback), self.config.private_result_max_chars)
                     for qq, fallback in fallback_private.items()
                 }
             else:
@@ -83,15 +87,22 @@ class BatchNarrator:
     def _clip_round_result(self, result: dict[str, Any]) -> dict[str, Any]:
         merged = dict(result)
         merged["public_summary"] = self._clip(
-            str(merged.get("public_summary") or "").strip(),
+            self._fallback_if_bad(merged.get("public_summary"), "【学园都市更新】\n本轮结算已完成，但公告文本生成异常。"),
             self.config.public_summary_max_chars,
         )
         private_results = merged.get("private_results") or {}
         if isinstance(private_results, dict):
-            merged["private_results"] = {
-                str(qq): self._clip(str(text or "").strip(), self.config.private_result_max_chars)
-                for qq, text in private_results.items()
-            }
+            cleaned_results: dict[str, str] = {}
+            for qq, text in private_results.items():
+                raw = str(text or "").strip()
+                if not raw:
+                    cleaned_results[str(qq)] = ""
+                    continue
+                cleaned_results[str(qq)] = self._clip(
+                    self._fallback_if_bad(raw, "【个人结果】\n本轮结果已记录，但私聊文本生成异常，请联系管理员查看历史。"),
+                    self.config.private_result_max_chars,
+                )
+            merged["private_results"] = cleaned_results
         return merged
 
     async def normalize_character_card(
@@ -117,6 +128,7 @@ class BatchNarrator:
                     "faction 是阵营归类，优先使用普通学生、风纪委员 Judgment、警备员 Anti-Skill、研究机构、Skill-Out、暗部边缘、留学生、魔法侧访客、无阵营。",
                     "ability 是能力描述，尽量保留自然语言里的核心能力，并写出限制或代价。",
                     "power_level 只能是 Level 0 到 Level 5；普通玩家没有明确写等级时默认整理为 Level 3。",
+                    "gender 是性别，提取玩家明确写到的男/女/其他/未公开；没有就空字符串，不要补编。",
                     "outfit 是穿衣着装，提取玩家写到的服装、制服、外套、随身显眼穿搭；没有就空字符串。",
                     "body_profile 是简易身材数据，提取身高、体型、发型等低敏外观；没有就空字符串，不要补编。",
                     "如果原文暗示高阶能力，最多整理到 Level 4；只有明确写 Level 5 才可保留 Level 5，不能输出更高等级。",
@@ -129,6 +141,7 @@ class BatchNarrator:
                     "faction": "阵营",
                     "ability": "能力",
                     "power_level": "Level 3",
+                    "gender": "性别",
                     "outfit": "穿衣着装",
                     "body_profile": "简易身材数据",
                 },
@@ -153,25 +166,151 @@ class BatchNarrator:
         return self._fallback_character_card(raw_text, sender_id)
 
     def _parse_json(self, text: str) -> dict[str, Any]:
-        text = text.strip()
+        text = str(text or "").strip()
+        if not text:
+            return {}
+        candidates = self._json_candidates(text)
+        for candidate in candidates:
+            for repaired in self._json_repair_candidates(candidate):
+                try:
+                    data = json.loads(repaired)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(data, dict):
+                    return data
+        return {}
+
+    def _json_candidates(self, text: str) -> list[str]:
+        candidates: list[str] = []
         fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, re.S | re.I)
         if fence:
-            text = fence.group(1).strip()
-        try:
-            data = json.loads(text)
-            return data if isinstance(data, dict) else {}
-        except json.JSONDecodeError:
-            pass
+            candidates.append(fence.group(1).strip())
+        candidates.append(text)
+        balanced = self._extract_balanced_json_object(text)
+        if balanced:
+            candidates.append(balanced)
         match = re.search(r"\{.*\}", text, re.S)
-        if not match:
-            return {}
-        data = json.loads(match.group(0))
-        return data if isinstance(data, dict) else {}
+        if match:
+            candidates.append(match.group(0).strip())
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in candidates:
+            item = item.strip()
+            if item and item not in seen:
+                deduped.append(item)
+                seen.add(item)
+        return deduped
+
+    def _json_repair_candidates(self, text: str) -> list[str]:
+        cleaned = text.strip()
+        cleaned = cleaned.replace("\ufeff", "")
+        candidates = [cleaned]
+        no_trailing_commas = re.sub(r",\s*([}\]])", r"\1", cleaned)
+        candidates.append(no_trailing_commas)
+        missing_commas = re.sub(
+            r'([}\]"0-9])\s*(\n|\r\n)\s*("[^"\n\r]+":)',
+            r"\1,\n\3",
+            no_trailing_commas,
+        )
+        candidates.append(missing_commas)
+        adjacent_missing_commas = re.sub(
+            r'([}\]"0-9])\s+("(?:public_summary|player_results|game_name|identity|faction|ability|power_level|gender|outfit|body_profile)":)',
+            r"\1,\2",
+            no_trailing_commas,
+        )
+        candidates.append(adjacent_missing_commas)
+        escaped_newlines = self._escape_json_string_newlines(missing_commas)
+        candidates.append(escaped_newlines)
+        escaped_newlines = self._escape_json_string_newlines(adjacent_missing_commas)
+        candidates.append(escaped_newlines)
+        escaped_newlines = self._escape_json_string_newlines(no_trailing_commas)
+        candidates.append(escaped_newlines)
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in candidates:
+            if item and item not in seen:
+                deduped.append(item)
+                seen.add(item)
+        return deduped
+
+    def _extract_balanced_json_object(self, text: str) -> str:
+        start = text.find("{")
+        if start < 0:
+            return ""
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:index + 1].strip()
+        return ""
+
+    def _escape_json_string_newlines(self, text: str) -> str:
+        result: list[str] = []
+        in_string = False
+        escaped = False
+        for char in text:
+            if in_string:
+                if escaped:
+                    result.append(char)
+                    escaped = False
+                    continue
+                if char == "\\":
+                    result.append(char)
+                    escaped = True
+                    continue
+                if char == '"':
+                    in_string = False
+                    result.append(char)
+                    continue
+                if char == "\n":
+                    result.append("\\n")
+                    continue
+                if char == "\r":
+                    continue
+                result.append(char)
+                continue
+            result.append(char)
+            if char == '"':
+                in_string = True
+        return "".join(result)
 
     def _clip(self, text: str, limit: int) -> str:
+        text = str(text or "").strip()
         if len(text) <= limit:
             return text
         return text[:limit].rstrip() + "\n……"
+
+    def _fallback_if_bad(self, text: Any, fallback: Any) -> str:
+        value = str(text or "").strip()
+        fallback_value = str(fallback or "").strip()
+        if not value or self._is_placeholder(value):
+            return fallback_value
+        return value
+
+    def _is_placeholder(self, text: str) -> bool:
+        markers = (
+            "你的行动被记录并执行",
+            "具体细节会在本轮剧情里展开",
+            "稍后展开",
+            "等待后续剧情",
+        )
+        return any(marker in str(text or "") for marker in markers)
 
     def _character_card_prompt(self) -> str:
         return "\n".join(
@@ -186,6 +325,7 @@ class BatchNarrator:
                 "- faction：阵营，优先使用普通学生、风纪委员 Judgment、警备员 Anti-Skill、研究机构、Skill-Out、暗部边缘、留学生、魔法侧访客、无阵营。",
                 "- ability：能力描述，保留核心设定，不要乱加新能力，尽量补一句限制或代价。",
                 "- power_level：只能输出 Level 0 / Level 1 / Level 2 / Level 3 / Level 4 / Level 5；普通玩家未写等级时默认 Level 3。",
+                "- gender：性别，只提取玩家明确写过的男/女/其他/未公开，缺失时输出空字符串。",
                 "- outfit：穿衣着装，只提取玩家明确写过的服装信息，缺失时输出空字符串。",
                 "- body_profile：简易身材数据，只提取身高、体型、发型等低敏外观，缺失时输出空字符串。",
                 "如果原文表达模糊，优先保守整理，保持可审核。",
@@ -203,6 +343,7 @@ class BatchNarrator:
             "faction": self._clip(self._text_value(data.get("faction") or data.get("camp") or data.get("group") or ""), 80),
             "ability": self._clip(self._text_value(data.get("ability") or data.get("power") or data.get("skill") or ""), 240),
             "power_level": self._normalize_power_level(data.get("power_level") or data.get("level") or ""),
+            "gender": self._clip(self._text_value(data.get("gender") or data.get("sex") or ""), 20),
             "outfit": self._clip(self._text_value(data.get("outfit") or data.get("clothing") or data.get("wearing") or ""), 120),
             "body_profile": self._clip(self._text_value(data.get("body_profile") or data.get("body") or data.get("appearance") or ""), 120),
         }
@@ -214,6 +355,8 @@ class BatchNarrator:
             normalized["faction"] = self._guess_faction(raw_text)
         if not normalized["ability"]:
             normalized["ability"] = self._guess_ability(raw_text)
+        if not normalized["gender"]:
+            normalized["gender"] = self._guess_gender(raw_text)
         normalized["power_level"] = self._normalize_power_level(normalized["power_level"] or raw_text)
         return normalized
 
@@ -224,6 +367,7 @@ class BatchNarrator:
             "faction": self._guess_faction(raw_text),
             "ability": self._guess_ability(raw_text),
             "power_level": self._normalize_power_level(raw_text),
+            "gender": self._guess_gender(raw_text),
             "outfit": self._guess_outfit(raw_text),
             "body_profile": self._guess_body_profile(raw_text),
         }
@@ -327,6 +471,36 @@ class BatchNarrator:
             if keyword in text and keyword not in parts:
                 parts.append(keyword)
         return self._clip("，".join(parts), 120)
+
+    def _guess_gender(self, raw_text: str) -> str:
+        text = self._text_value(raw_text)
+        explicit = re.search(r"(?:性别|gender|sex)\s*[:：]?\s*(男|女|其他|非二元|未公开|保密)", text, re.I)
+        if explicit:
+            return self._normalize_gender(explicit.group(1))
+        for value, keywords in (
+            ("未公开", ("性别保密", "不公开性别", "未公开性别")),
+            ("其他", ("非二元", "无性别", "其他性别")),
+            ("女", ("女生", "女性", "少女", "女孩子")),
+            ("男", ("男生", "男性", "少年", "男孩子")),
+        ):
+            if any(keyword in text for keyword in keywords):
+                return value
+        token = re.search(r"(?:^|[，,。；;\s|｜])([男女])(?:$|[，,。；;\s|｜])", text)
+        if token:
+            return token.group(1)
+        return ""
+
+    def _normalize_gender(self, value: str) -> str:
+        value = self._text_value(value)
+        if value in {"男", "男性", "男生"}:
+            return "男"
+        if value in {"女", "女性", "女生"}:
+            return "女"
+        if value in {"非二元", "其他"}:
+            return "其他"
+        if value in {"未公开", "保密"}:
+            return "未公开"
+        return ""
 
     def _normalize_power_level(self, raw_value: Any) -> str:
         text = self._text_value(raw_value).lower()

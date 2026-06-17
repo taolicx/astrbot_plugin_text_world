@@ -390,6 +390,7 @@ HTML = r"""<!doctype html>
                 <div><label for="charAudit">审核状态</label><select id="charAudit"><option value="approved">已通过</option><option value="pending">待审核</option><option value="rejected">已拒绝</option></select></div>
                 <div><label for="charLoc">位置 key</label><input id="charLoc" value="school_gate" /></div>
                 <div><label for="charPower">能力名称-等级</label><input id="charPower" value="Level 3" /></div>
+                <div><label for="charGender">性别</label><input id="charGender" placeholder="男 / 女 / 其他 / 未公开" /></div>
                 <div><label for="charFaction">阵营</label><input id="charFaction" /></div>
                 <div class="wide"><label for="charIdentity">身份设定</label><textarea id="charIdentity"></textarea></div>
                 <div class="wide"><label for="charAbility">能力设定</label><textarea id="charAbility"></textarea></div>
@@ -733,8 +734,10 @@ function renderOverview(){
   const pending = chars.filter(c => c.audit_status === "pending").length;
   const queued = events.filter(e => Number(e.trigger_next) === 1).length;
   const activeItems = shop.filter(s => Number(s.is_active) !== 0).length;
-  $("overviewSub").textContent = `${roleLabel(state.user.role)}视图，当前筛选后 ${worlds.length} 个世界`;
+  const time = state.time_context || {};
+  $("overviewSub").textContent = `${roleLabel(state.user.role)}视图，当前筛选后 ${worlds.length} 个世界 · 世界时间 ${time.display || "-"}`;
   $("kpis").innerHTML = [
+    metric("世界时间", time.phase || "-"),
     metric("世界", worlds.length),
     metric("角色", chars.length),
     metric("待审核", pending),
@@ -755,6 +758,7 @@ function worldCard(w){
     <div class="kv">
       <span>群号</span><span>${esc(w.group_id)}</span>
       <span>轮次</span><span>第 ${esc(w.current_round)} 轮</span>
+      <span>世界时间</span><span>${esc((state.time_context && state.time_context.display) || "-")}</span>
       <span>行动周期</span><span>${esc(w.cycle_minutes)} 分钟</span>
       <span>事件周期</span><span>${esc(w.event_cycle_minutes)} 分钟</span>
       <span>下次结算</span><span>${esc(fmtTime(w.next_tick_at))}</span>
@@ -764,7 +768,7 @@ function worldCard(w){
 }
 
 function renderCharacters(){
-  const chars = filtered(state.characters, ["group_id","qq_id","game_name","identity","faction","ability","power_level","audit_status","outfit","body_profile"]);
+  const chars = filtered(state.characters, ["group_id","qq_id","game_name","identity","faction","ability","power_level","gender","audit_status","outfit","body_profile"]);
   $("characterSub").textContent = isAdmin() ? `共 ${chars.length} 张角色卡` : `你的角色卡 ${chars.length} 张`;
   $("characters").innerHTML = chars.length ? chars.map(characterCard).join("") : empty("暂无角色");
 }
@@ -777,6 +781,7 @@ function characterCard(c){
       <span>群号</span><span>${esc(c.group_id)}</span>
       <span>QQ</span><span>${esc(c.qq_id)}</span>
       <span>身份</span><span>${esc(c.identity || "-")}</span>
+      <span>性别</span><span>${esc(c.gender || "未设定")}</span>
       <span>阵营</span><span>${esc(c.faction || "-")}</span>
       <span>能力</span><span>${esc(c.ability || "-")}</span>
       <span>能力名称-等级</span><span>${esc((c.ability || "-") + " - " + (c.power_level || "Level 3"))}</span>
@@ -841,6 +846,7 @@ function fillCharacter(id){
   $("charAudit").value = c.audit_status || "pending";
   $("charLoc").value = c.location_key || "school_gate";
   $("charPower").value = c.power_level || "Level 3";
+  $("charGender").value = c.gender || "";
   $("charFaction").value = c.faction || "";
   $("charIdentity").value = c.identity || "";
   $("charAbility").value = c.ability || "";
@@ -861,7 +867,7 @@ function fillCharacter(id){
 }
 
 function clearCharacterForm(){
-  for(const id of ["charQq","charName","charPassword","charFaction","charIdentity","charAbility","charOutfit","charBody","charMoney"]){
+  for(const id of ["charQq","charName","charPassword","charFaction","charIdentity","charAbility","charGender","charOutfit","charBody","charMoney"]){
     $(id).value = "";
   }
   $("charAudit").value = "approved";
@@ -892,6 +898,7 @@ async function saveCharacter(){
     faction:$("charFaction").value,
     ability:$("charAbility").value,
     power_level:$("charPower").value,
+    gender:$("charGender").value,
     outfit:$("charOutfit").value,
     body_profile:$("charBody").value,
     ability_exp:Number($("charExp").value),
@@ -1118,7 +1125,7 @@ function renderProviders(){
   const p = state.providers || {};
   $("providerInfo").innerHTML = [
     providerCard("主模型", "建议 Claude 4.6o，负责默认高质量任务", p.main_provider_id, p.resolved_main_provider_id),
-    providerCard("剧情模型", "每小时结算的公共公告和私聊润色优先使用", p.story_provider_id, p.resolved_story_provider_id),
+    providerCard("剧情模型", "每小时结算的公共摘要和私聊润色优先使用", p.story_provider_id, p.resolved_story_provider_id),
     providerCard("快速模型", "预留给反作弊、摘要、轻量判定等低延迟任务", p.fast_provider_id, p.resolved_fast_provider_id),
     providerCard("旧默认", "兼容旧配置，专用 provider 未设置时参与回退", p.default_provider_id, p.default_provider_id)
   ].join("");

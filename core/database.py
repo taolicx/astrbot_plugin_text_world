@@ -103,6 +103,7 @@ class TextWorldDB:
             self._migrate(con)
             self._ensure_admin(con, admin_username, admin_password)
             self._backfill_character_users(con)
+            self._refresh_existing_world_defaults(con)
 
         self.run(work)
 
@@ -165,6 +166,7 @@ class TextWorldDB:
               qq_id TEXT NOT NULL,
               game_name TEXT NOT NULL,
               display_name TEXT NOT NULL,
+              gender TEXT NOT NULL DEFAULT '',
               identity TEXT NOT NULL DEFAULT '',
               faction TEXT NOT NULL DEFAULT '',
               ability TEXT NOT NULL DEFAULT '',
@@ -172,6 +174,12 @@ class TextWorldDB:
               outfit TEXT NOT NULL DEFAULT '',
               body_profile TEXT NOT NULL DEFAULT '',
               ability_exp INTEGER NOT NULL DEFAULT 0,
+              reputation INTEGER NOT NULL DEFAULT 0,
+              physical_exp INTEGER NOT NULL DEFAULT 0,
+              social_exp INTEGER NOT NULL DEFAULT 0,
+              study_exp INTEGER NOT NULL DEFAULT 0,
+              art_exp INTEGER NOT NULL DEFAULT 0,
+              task_state_json TEXT NOT NULL DEFAULT '{}',
               daily_development_date TEXT NOT NULL DEFAULT '',
               death_protection INTEGER NOT NULL DEFAULT 0,
               traits_json TEXT NOT NULL DEFAULT '[]',
@@ -309,12 +317,19 @@ class TextWorldDB:
             "characters": {
                 "user_id": "INTEGER REFERENCES users(id) ON DELETE SET NULL",
                 "display_name": "TEXT NOT NULL DEFAULT ''",
+                "gender": "TEXT NOT NULL DEFAULT ''",
                 "faction": "TEXT NOT NULL DEFAULT ''",
                 "ability": "TEXT NOT NULL DEFAULT ''",
                 "power_level": "TEXT NOT NULL DEFAULT 'Level 3'",
                 "outfit": "TEXT NOT NULL DEFAULT ''",
                 "body_profile": "TEXT NOT NULL DEFAULT ''",
                 "ability_exp": "INTEGER NOT NULL DEFAULT 0",
+                "reputation": "INTEGER NOT NULL DEFAULT 0",
+                "physical_exp": "INTEGER NOT NULL DEFAULT 0",
+                "social_exp": "INTEGER NOT NULL DEFAULT 0",
+                "study_exp": "INTEGER NOT NULL DEFAULT 0",
+                "art_exp": "INTEGER NOT NULL DEFAULT 0",
+                "task_state_json": "TEXT NOT NULL DEFAULT '{}'",
                 "daily_development_date": "TEXT NOT NULL DEFAULT ''",
                 "death_protection": "INTEGER NOT NULL DEFAULT 0",
                 "traits_json": "TEXT NOT NULL DEFAULT '[]'",
@@ -421,6 +436,11 @@ class TextWorldDB:
             "INSERT INTO users(username,password_hash,role,created_at,updated_at) VALUES(?,?,?,?,?)",
             (username, password_hash(password), "admin", now, now),
         )
+
+    def _refresh_existing_world_defaults(self, con: sqlite3.Connection) -> None:
+        rows = con.execute("SELECT group_id FROM worlds").fetchall()
+        for row in rows:
+            self._seed_defaults(con, str(row["group_id"]))
 
     def create_session(self, username: str, password: str) -> str | None:
         def work(con: sqlite3.Connection) -> str | None:
@@ -627,14 +647,13 @@ class TextWorldDB:
             con.execute(
                 """
                 UPDATE npcs
-                SET name=?,role=?,faction=?,location_key=?,disposition=?,memory=?,updated_at=?
+                SET name=?,role=?,faction=?,disposition=?,memory=?,updated_at=?
                 WHERE group_id=? AND npc_key=?
                 """,
                 (
                     npc.name,
                     npc.role,
                     npc.faction,
-                    npc.location_id,
                     npc.disposition,
                     npc.memory,
                     now,
@@ -642,6 +661,18 @@ class TextWorldDB:
                     key,
                 ),
             )
+            current = con.execute(
+                "SELECT location_key FROM npcs WHERE group_id=? AND npc_key=?",
+                (group_id, key),
+            ).fetchone()
+            if current and not con.execute(
+                "SELECT 1 FROM locations WHERE group_id=? AND location_key=?",
+                (group_id, current["location_key"]),
+            ).fetchone():
+                con.execute(
+                    "UPDATE npcs SET location_key=?, updated_at=? WHERE group_id=? AND npc_key=?",
+                    (npc.location_id, now, group_id, key),
+                )
         for item in DEFAULT_SHOP_ITEMS:
             con.execute(
                 """
@@ -660,6 +691,67 @@ class TextWorldDB:
                     now,
                 ),
             )
+            legacy_defaults = {
+                "矿泉水": [
+                    {"water": 24},
+                ],
+                "营养果冻": [
+                    {"water": 8, "satiety": 16},
+                ],
+                "学生便当": [
+                    {"satiety": 34, "mood": 1},
+                ],
+                "校园午餐券": [
+                    {"satiety": 40, "mood": 2},
+                ],
+                "能量饮料": [
+                    {"energy": 18, "water": 5, "mood": -1},
+                ],
+                "家庭餐厅套餐券": [
+                    {"satiety": 30, "mood": 3},
+                ],
+                "死亡保护卡": [
+                    {"death_protection": 1},
+                ],
+            }
+            legacy_effects = [
+                json.dumps(effect, ensure_ascii=False, sort_keys=True)
+                for effect in legacy_defaults.get(item.name, [])
+            ]
+            existing = con.execute(
+                "SELECT effect_json,description FROM shop_items WHERE group_id=? AND name=?",
+                (group_id, item.name),
+            ).fetchone()
+            existing_effect = ""
+            if existing:
+                try:
+                    existing_effect = json.dumps(
+                        json.loads(str(existing["effect_json"] or "{}")),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                except json.JSONDecodeError:
+                    existing_effect = ""
+            if existing and existing_effect in legacy_effects:
+                if item.name == "死亡保护卡":
+                    existing_desc = str(existing["description"] if "description" in existing.keys() else "")
+                    if "经验惩罚" not in existing_desc:
+                        continue
+                con.execute(
+                    """
+                    UPDATE shop_items
+                    SET description=?,price=?,effect_json=?,is_active=1,updated_at=?
+                    WHERE group_id=? AND name=?
+                    """,
+                    (
+                        item.description,
+                        item.price,
+                        json.dumps(item.effect, ensure_ascii=False),
+                        now,
+                        group_id,
+                        item.name,
+                    ),
+                )
         for event in DEFAULT_EVENT_PRESETS:
             exists = con.execute(
                 "SELECT 1 FROM event_presets WHERE group_id=? AND title=? LIMIT 1",
