@@ -303,6 +303,7 @@ class TextWorldService:
                 active_event = self._random_event(con, group_id)
             if active_event:
                 self._apply_event_effect(con, group_id, active_event)
+            map_context = self._map_context(con, group_id, compact=True)
             actions = con.execute(
                 """
                 SELECT actions.*, characters.qq_id, characters.game_name, characters.location_key, characters.hp, characters.energy,
@@ -407,6 +408,7 @@ class TextWorldService:
                 "npc_updates": npc_updates,
                 "active_event": active_event,
                 "outcomes": outcomes,
+                "map_context": map_context,
             }
 
         return self.db.run(work)
@@ -1100,7 +1102,7 @@ class TextWorldService:
             return f"{game_name or '你'}在{loc_name}完成了一段学习安排。课程、终端资料和周围学生的讨论让你对当下局势有了更清晰的判断。"
         if any(word in text for word in ("散步", "闲逛", "逛", "巡逻", "巡街")):
             return f"{game_name or '你'}沿着{loc_name}附近活动了一圈。{phase}的街区没有立刻爆发事件，但你注意到几处适合下轮继续追查的细节。"
-        return f"{game_name or '你'}在{loc_name}完成了本轮行动：“{action_text}”。程序已按当前位置、现实时间和角色状态结算，未识别到特殊奖励、交易或伤害。"
+        return f"{game_name or '你'}在{loc_name}推进了本轮行动：“{action_text}”。这次行动没有产生可量化的金钱、背包或伤害变化，但现场位置、时间和人物状态已经被记录，可作为下一轮继续互动的铺垫。"
 
     def _resolve_rest(
         self,
@@ -1504,6 +1506,7 @@ class TextWorldService:
             "accepted": accepted,
             "summary": summary,
             "location_key": location_key,
+            "movement_path": movement_path,
             "encounters": encounters,
             "warnings": warnings,
             "deltas": {
@@ -1707,6 +1710,9 @@ class TextWorldService:
         lines = [f"【第 {round_no} 轮个人结果】", f"世界时间：{time_context['display']}", outcome["summary"]]
         if loc:
             lines.append(f"当前位置：{loc['name']}")
+            mini_map = self._mini_map_text(con, group_id, str(outcome["location_key"]), outcome.get("movement_path") or [])
+            if mini_map:
+                lines.append(mini_map)
         if outcome["encounters"]:
             lines.append("你遇到了：" + "、".join(item["name"] for item in outcome["encounters"][:6]))
         if outcome["warnings"]:
@@ -2735,6 +2741,138 @@ class TextWorldService:
     def _location(self, con: sqlite3.Connection, group_id: str, key: str) -> sqlite3.Row | None:
         return con.execute("SELECT * FROM locations WHERE group_id=? AND location_key=?", (group_id, key)).fetchone()
 
+    def _map_context(self, con: sqlite3.Connection, group_id: str, compact: bool = True) -> dict[str, Any]:
+        location_rows = con.execute(
+            "SELECT location_key,name,description,tags,sort_order FROM locations WHERE group_id=? ORDER BY sort_order, id",
+            (group_id,),
+        ).fetchall()
+        locations: list[dict[str, Any]] = []
+        for row in location_rows:
+            tags = loads(str(row["tags"] or "[]"), [])
+            if not isinstance(tags, list):
+                tags = []
+            item = {
+                "key": str(row["location_key"]),
+                "name": str(row["name"]),
+                "tags": [str(tag) for tag in tags[:5]],
+            }
+            if not compact:
+                item["description"] = self.clean_text(str(row["description"] or ""), 180)
+            locations.append(item)
+        edges = [
+            {"from": str(row["from_location_key"]), "to": str(row["to_location_key"])}
+            for row in con.execute(
+                """
+                SELECT from_location_key,to_location_key
+                FROM location_edges
+                WHERE group_id=?
+                ORDER BY from_location_key,to_location_key
+                """,
+                (group_id,),
+            ).fetchall()
+        ]
+        players = [
+            {
+                "name": str(row["game_name"]),
+                "qq_id": str(row["qq_id"]),
+                "location_key": str(row["location_key"]),
+            }
+            for row in con.execute(
+                """
+                SELECT qq_id,game_name,location_key
+                FROM characters
+                WHERE group_id=? AND audit_status='approved'
+                ORDER BY id
+                LIMIT 80
+                """,
+                (group_id,),
+            ).fetchall()
+        ]
+        npcs = [
+            {
+                "name": str(row["name"]),
+                "role": self.clean_text(str(row["role"] or ""), 60),
+                "faction": self.clean_text(str(row["faction"] or ""), 40),
+                "location_key": str(row["location_key"]),
+            }
+            for row in con.execute(
+                """
+                SELECT name,role,faction,location_key
+                FROM npcs
+                WHERE group_id=?
+                ORDER BY id
+                LIMIT 80
+                """,
+                (group_id,),
+            ).fetchall()
+        ]
+        return {
+            "rule": (
+                "这是本轮结算的小地图。叙事必须按 locations/edges/players/npcs 理解地点、相邻关系和角色位置；"
+                "不得让角色瞬移；玩家说“门口/附近/宿舍门前”时，优先按当前位置附近和相邻地点处理。"
+            ),
+            "max_move_steps": int(getattr(self.config, "max_move_steps", 3) or 0),
+            "locations": locations,
+            "edges": edges,
+            "players": players,
+            "npcs": npcs,
+        }
+
+    def _mini_map_text(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        location_key: str,
+        movement_path: list[str] | tuple[str, ...] | None = None,
+    ) -> str:
+        location_key = str(location_key or "").strip()
+        if not location_key:
+            return ""
+        current = self._location(con, group_id, location_key)
+        if not current:
+            return ""
+        neighbors = self._neighbor_names(con, group_id, location_key)
+        lines = [f"位置小地图：你在【{current['name']}】。"]
+        clean_path = [str(item) for item in (movement_path or []) if str(item or "").strip()]
+        if len(clean_path) > 1:
+            path_names: list[str] = []
+            for key in clean_path:
+                loc = self._location(con, group_id, key)
+                path_names.append(str(loc["name"] if loc else key))
+            lines.append("本轮路线：" + " → ".join(path_names))
+        if neighbors:
+            lines.append("相邻可去：" + "、".join(neighbors[:8]))
+        nearby = self._nearby_actor_names(con, group_id, location_key)
+        if nearby:
+            lines.append("附近可见：" + "、".join(nearby[:8]))
+        return "\n".join(lines)
+
+    def _nearby_actor_names(self, con: sqlite3.Connection, group_id: str, location_key: str) -> list[str]:
+        names: list[str] = []
+        for row in con.execute(
+            """
+            SELECT game_name AS name
+            FROM characters
+            WHERE group_id=? AND location_key=? AND audit_status='approved'
+            ORDER BY id
+            LIMIT 8
+            """,
+            (group_id, location_key),
+        ).fetchall():
+            names.append(str(row["name"]))
+        for row in con.execute(
+            """
+            SELECT name
+            FROM npcs
+            WHERE group_id=? AND location_key=?
+            ORDER BY id
+            LIMIT 8
+            """,
+            (group_id, location_key),
+        ).fetchall():
+            names.append(str(row["name"]))
+        return names
+
     def _validate_player_account_owner(
         self,
         con: sqlite3.Connection,
@@ -2942,13 +3080,14 @@ class TextWorldService:
         if not query:
             return []
         scored: list[tuple[int, sqlite3.Row]] = []
+        threshold = max(4, min(8, len(query) // 2 + 2))
         for row in rows:
             name = str(row["name"] or "")
             key = str(row["location_key"] or "")
             tags = "".join(loads(str(row["tags"] or "[]"), []))
             haystack = self._normalize_location_text(name + key + tags)
             score = self._fuzzy_text_score(query, haystack)
-            if score >= max(2, min(5, len(query) // 2)):
+            if score >= threshold:
                 scored.append((score, row))
         scored.sort(key=lambda item: (-item[0], int(item[1]["sort_order"] or 0)))
         return [row for _, row in scored[:3]]
@@ -3052,6 +3191,27 @@ class TextWorldService:
                 "学校门口",
                 "校门口",
                 "校门",
+            )
+        elif key == "dorm":
+            aliases = (
+                "第七学区学生寮",
+                "学生寮",
+                "宿舍区",
+                "宿舍",
+                "宿舍门前",
+                "宿舍门口",
+                "宿舍门",
+                "学生宿舍门前",
+                "学生宿舍门口",
+                "宿舍楼下",
+                "宿舍楼门口",
+                "常盘台宿舍门前",
+                "常盘台宿舍门口",
+                "常盘台宿舍",
+                "黑子宿舍门前",
+                "黑子宿舍门口",
+                "御坂美琴宿舍门前",
+                "御坂美琴宿舍门口",
             )
         elif key == "hospital":
             aliases = (
