@@ -41,6 +41,9 @@ class TextWorldConfig:
         )
         self.send_public_summary_to_group = self._bool(raw, "send_public_summary_to_group", False)
         self.include_public_summary_in_private = self._bool(raw, "include_public_summary_in_private", True)
+        self.ambient_event_chance_percent = max(
+            0, min(100, self._int(raw, "ambient_event_chance_percent", 65))
+        )
         self.pvp_damage_min = max(0, min(80, self._int(raw, "pvp_damage_min", 10)))
         self.pvp_damage_max = max(
             self.pvp_damage_min, min(95, self._int(raw, "pvp_damage_max", 28))

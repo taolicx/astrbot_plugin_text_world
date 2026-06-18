@@ -104,6 +104,16 @@
     "type": "bool",
     "default": true
   },
+  "ambient_event_chance_percent": {
+    "description": "每轮为未行动玩家或附近观察生成位置环境小事件的概率。调高后更常出现隔壁宿舍、窗外、走廊、广播、附近 NPC 动静；100 表示每轮必定给环境反馈",
+    "type": "int",
+    "default": 65,
+    "slider": {
+      "min": 0,
+      "max": 100,
+      "step": 5
+    }
+  },
   "pvp_damage_min": {
     "description": "玩家之间明确冲突/互殴时的最低生命损失，默认不再按过家家处理",
     "type": "int",

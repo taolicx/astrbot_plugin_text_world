@@ -376,9 +376,22 @@ class TextWorldService:
                         "UPDATE actions SET status='resolved', result_text=?, warnings=?, resolved_at=? WHERE id=?",
                         (private_text, dumps(outcome.get("warnings", [])), utc_now_iso(), outcome["action_id"]),
                     )
-            participant_qq_ids = self._approved_player_qq_ids(con, group_id)
-            for qq_id in participant_qq_ids:
-                private_results.setdefault(str(qq_id), "")
+            for player in self._approved_player_rows(con, group_id):
+                qq_id = str(player["qq_id"])
+                if qq_id in private_results:
+                    continue
+                ambient_text = self._ensure_sendable_text(
+                    self._build_idle_private_result(con, group_id, round_no, player, time_context, active_event, npc_updates),
+                    f"【第 {round_no} 轮个人结果】\n世界时间：{time_context['display']}\n你本轮没有提交行动，位置和状态维持在当前区域；附近环境仍按世界时间推进。",
+                )
+                private_results[qq_id] = ambient_text
+                con.execute(
+                    """
+                    INSERT INTO history(group_id,round_no,visibility,character_id,kind,text,created_at)
+                    VALUES(?,?,?,?,?,?,?)
+                    """,
+                    (group_id, round_no, "private", player["id"], "round_ambient", ambient_text, utc_now_iso()),
+                )
             con.execute(
                 """
                 INSERT INTO history(group_id,round_no,visibility,kind,text,created_at)
@@ -422,11 +435,13 @@ class TextWorldService:
         return text + "\n提示：本摘要仅私聊发送给已参与游戏的玩家，群聊不再发布剧情公告。"
 
     def _approved_player_qq_ids(self, con: sqlite3.Connection, group_id: str) -> list[str]:
-        rows = con.execute(
-            "SELECT qq_id FROM characters WHERE group_id=? AND audit_status='approved' ORDER BY id",
+        return [str(row["qq_id"]) for row in self._approved_player_rows(con, group_id) if str(row["qq_id"] or "").strip()]
+
+    def _approved_player_rows(self, con: sqlite3.Connection, group_id: str) -> list[sqlite3.Row]:
+        return con.execute(
+            "SELECT * FROM characters WHERE group_id=? AND audit_status='approved' ORDER BY id",
             (group_id,),
         ).fetchall()
-        return [str(row["qq_id"]) for row in rows if str(row["qq_id"] or "").strip()]
 
     def merge_public_summary_into_private_results(
         self,
@@ -1098,6 +1113,9 @@ class TextWorldService:
             return f"{game_name or '你'}在{loc_name}围绕“{action_text}”展开调查。本轮只得到公开传闻和可接触线索，未突破权限边界。"
         if any(word in text for word in ("等待", "蹲守", "守着", "等人")):
             return f"{game_name or '你'}在{loc_name}等待目标或机会。{phase}的环境让行动节奏放慢，你没有获得直接奖励，但保留了后续接触的可能。"
+        if any(word in text for word in ("串门", "隔壁", "窗外", "走廊", "门外", "听见", "听到", "声音", "动静")):
+            ambient = self._ambient_scene_for_location(con, group_id, location_key, self.current_time_context(), None, [])
+            return f"{game_name or '你'}在{loc_name}把注意力放到附近动静上。{ambient} 这类线索还没有自动发展成正式事件，但可以作为下一轮继续追过去、敲门或询问的起点。"
         if any(word in text for word in ("上课", "学习", "自习", "补习", "写作业", "读书")):
             return f"{game_name or '你'}在{loc_name}完成了一段学习安排。课程、终端资料和周围学生的讨论让你对当下局势有了更清晰的判断。"
         if any(word in text for word in ("散步", "闲逛", "逛", "巡逻", "巡街")):
@@ -1732,6 +1750,103 @@ class TextWorldService:
                 f"状态：生命 {char['hp']}/100，精力 {char['energy']}/100，水分 {char['water']}/100，饱食度 {char['satiety']}/100，心情 {char['mood']}/100，学都币 {char['money']}"
             )
         return "\n".join(lines)
+
+    def _build_idle_private_result(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        round_no: int,
+        char: sqlite3.Row,
+        time_context: dict[str, Any] | None = None,
+        event: dict[str, Any] | None = None,
+        npc_updates: list[str] | None = None,
+    ) -> str:
+        location_key = str(char["location_key"] or "")
+        loc = self._location(con, group_id, location_key)
+        loc_name = str(loc["name"] if loc else location_key or "当前位置")
+        time_context = time_context or self.current_time_context()
+        lines = [
+            f"【第 {round_no} 轮个人结果】",
+            f"世界时间：{time_context['display']}",
+            "你本轮没有提交行动，位置、背包和主要状态没有主动变化；但你所在区域仍然在按现实时间流动。",
+        ]
+        if loc:
+            lines.append(f"当前位置：{loc_name}")
+            mini_map = self._mini_map_text(con, group_id, location_key, [])
+            if mini_map:
+                lines.append(mini_map)
+        ambient = self._ambient_scene_for_location(con, group_id, location_key, time_context, event, npc_updates or [])
+        if ambient:
+            lines.append("附近动静：" + ambient)
+        if event:
+            title = str(event.get("title") or "公共事件")
+            description = self.clean_text(str(event.get("description") or ""), 180)
+            if description:
+                lines.append(f"公共事件余波：{title} - {description}")
+        elif npc_updates:
+            lines.append("街头传闻：" + random.choice(npc_updates))
+        lines.append("提示：如果你想参与这些动静，下一轮可以写“去看窗外发生了什么”“去隔壁串门”“跟着声音过去”等行动。")
+        lines.append(
+            f"状态：生命 {char['hp']}/100，精力 {char['energy']}/100，水分 {char['water']}/100，饱食度 {char['satiety']}/100，心情 {char['mood']}/100，学都币 {char['money']}"
+        )
+        return "\n".join(lines)
+
+    def _ambient_scene_for_location(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        location_key: str,
+        time_context: dict[str, Any],
+        event: dict[str, Any] | None = None,
+        npc_updates: list[str] | None = None,
+    ) -> str:
+        loc = self._location(con, group_id, location_key)
+        loc_name = str(loc["name"] if loc else location_key or "当前位置")
+        phase = str((time_context or {}).get("phase") or "")
+        nearby = [name for name in self._nearby_actor_names(con, group_id, location_key) if name]
+        event_desc = self.clean_text(str((event or {}).get("description") or ""), 120) if event else ""
+        chance = int(getattr(self.config, "ambient_event_chance_percent", 65) or 0)
+        if not event_desc and not nearby and not npc_updates and random.randint(1, 100) > chance:
+            return f"{loc_name}附近暂时没有明显骚动，但广播、脚步声和终端通知仍在按世界时间刷新。"
+        if location_key == "dorm":
+            choices = [
+                "隔壁宿舍传来拖椅子和压低的说话声，像是有人在临时讨论明天的课程或能力测定。",
+                "走廊尽头的自动灯亮了一次又暗下去，宿舍管理的脚步声从门外经过。",
+                "窗外有警备机器人沿生活区慢慢巡过，远处广播提醒学生注意夜间归寮时间。",
+                "楼下有人短暂争执，又很快被同伴劝住；声音没有升级成公开冲突。",
+                "隔壁传出零食包装和终端提示音，像是有人在准备小型串门或夜宵活动。",
+            ]
+            if "深夜" in phase or "夜间" in phase:
+                choices.append("窗外街灯把学生寮外墙照得发白，偶尔能听见远处地铁或巡逻无人机掠过的声音。")
+            return random.choice(choices) + (f" 这和本轮公共事件的余波隐约相连：{event_desc}" if event_desc else "")
+        if location_key in {"classroom", "school_gate", "sakugawa", "tokiwa_dai", "gakusha_no_sono"}:
+            choices = [
+                f"{loc_name}附近有学生在交换课程、社团和能力测定的消息，几个名字被反复提起。",
+                f"广播和终端通知在{loc_name}附近刷新，有风纪委员提醒学生不要聚集到封锁区域。",
+                f"有人匆匆路过{loc_name}，带起一阵关于都市传说和临时检查的低声议论。",
+            ]
+            return random.choice(choices) + (f" 其中一条消息提到：{event_desc}" if event_desc else "")
+        if location_key in {"plaza", "main_road", "market", "seventh_mist", "shichifukujin_street", "family_restaurant", "canteen"}:
+            choices = [
+                f"{loc_name}附近的人流没有停下，广告屏、店铺广播和学生闲聊把几条新传闻混在一起。",
+                f"你能从{loc_name}附近听到店铺关门、自动贩卖机补货和风纪委员巡逻的声音。",
+                f"{loc_name}附近短暂聚起一圈人，又很快散开，像是有人看见了什么小骚动。",
+            ]
+            return random.choice(choices) + (f" 这轮最明显的消息是：{event_desc}" if event_desc else "")
+        if location_key in {"hospital", "lab", "mizuho_pathology", "s_processor", "anti_skill_07_hq", "judgment_177", "windowless_building"}:
+            choices = [
+                f"{loc_name}附近的权限检查和脚步声比平时更明显，公开区域之外的门禁没有放松。",
+                f"你能感觉到{loc_name}附近有内部调度，终端上的公开信息却只给出很简短的说明。",
+                f"{loc_name}附近有警备或研究人员经过，谈话内容被刻意压低，只留下几个模糊关键词。",
+            ]
+            return random.choice(choices) + (f" 公开层面能确认的是：{event_desc}" if event_desc else "")
+        if nearby:
+            return f"{loc_name}附近能看见或听见{nearby[0]}的动静，但距离还不足以自动展开正式互动。"
+        if npc_updates:
+            return random.choice(npc_updates)
+        if event_desc:
+            return f"{loc_name}附近也能感觉到公共事件的余波：{event_desc}"
+        return f"{loc_name}附近没有爆发公开冲突，但广播、脚步声和终端通知仍在给下一轮留下线索。"
 
     def _delta_label(self, key: str) -> str:
         return {
