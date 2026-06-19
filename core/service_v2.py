@@ -1728,7 +1728,13 @@ class TextWorldService:
         lines = [f"【第 {round_no} 轮个人结果】", f"世界时间：{time_context['display']}", outcome["summary"]]
         if loc:
             lines.append(f"当前位置：{loc['name']}")
-            mini_map = self._mini_map_text(con, group_id, str(outcome["location_key"]), outcome.get("movement_path") or [])
+            mini_map = self._mini_map_text(
+                con,
+                group_id,
+                str(outcome["location_key"]),
+                outcome.get("movement_path") or [],
+                exclude_character_id=int(outcome.get("character_id") or 0),
+            )
             if mini_map:
                 lines.append(mini_map)
         if outcome["encounters"]:
@@ -1772,10 +1778,18 @@ class TextWorldService:
         ]
         if loc:
             lines.append(f"当前位置：{loc_name}")
-            mini_map = self._mini_map_text(con, group_id, location_key, [])
+            mini_map = self._mini_map_text(con, group_id, location_key, [], exclude_character_id=int(char["id"]))
             if mini_map:
                 lines.append(mini_map)
-        ambient = self._ambient_scene_for_location(con, group_id, location_key, time_context, event, npc_updates or [])
+        ambient = self._ambient_scene_for_location(
+            con,
+            group_id,
+            location_key,
+            time_context,
+            event,
+            npc_updates or [],
+            exclude_character_id=int(char["id"]),
+        )
         if ambient:
             lines.append("附近动静：" + ambient)
         if event:
@@ -1799,11 +1813,12 @@ class TextWorldService:
         time_context: dict[str, Any],
         event: dict[str, Any] | None = None,
         npc_updates: list[str] | None = None,
+        exclude_character_id: int | None = None,
     ) -> str:
         loc = self._location(con, group_id, location_key)
         loc_name = str(loc["name"] if loc else location_key or "当前位置")
         phase = str((time_context or {}).get("phase") or "")
-        nearby = [name for name in self._nearby_actor_names(con, group_id, location_key) if name]
+        nearby = [name for name in self._nearby_actor_names(con, group_id, location_key, exclude_character_id=exclude_character_id) if name]
         event_desc = self.clean_text(str((event or {}).get("description") or ""), 120) if event else ""
         chance = int(getattr(self.config, "ambient_event_chance_percent", 65) or 0)
         if not event_desc and not nearby and not npc_updates and random.randint(1, 100) > chance:
@@ -2939,6 +2954,8 @@ class TextWorldService:
         group_id: str,
         location_key: str,
         movement_path: list[str] | tuple[str, ...] | None = None,
+        *,
+        exclude_character_id: int | None = None,
     ) -> str:
         location_key = str(location_key or "").strip()
         if not location_key:
@@ -2957,22 +2974,34 @@ class TextWorldService:
             lines.append("本轮路线：" + " → ".join(path_names))
         if neighbors:
             lines.append("相邻可去：" + "、".join(neighbors[:8]))
-        nearby = self._nearby_actor_names(con, group_id, location_key)
+        nearby = self._nearby_actor_names(con, group_id, location_key, exclude_character_id=exclude_character_id)
         if nearby:
             lines.append("附近可见：" + "、".join(nearby[:8]))
         return "\n".join(lines)
 
-    def _nearby_actor_names(self, con: sqlite3.Connection, group_id: str, location_key: str) -> list[str]:
+    def _nearby_actor_names(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        location_key: str,
+        *,
+        exclude_character_id: int | None = None,
+    ) -> list[str]:
         names: list[str] = []
+        params: list[Any] = [group_id, location_key]
+        extra_where = ""
+        if exclude_character_id:
+            extra_where = " AND id<>?"
+            params.append(int(exclude_character_id))
         for row in con.execute(
-            """
+            f"""
             SELECT game_name AS name
             FROM characters
-            WHERE group_id=? AND location_key=? AND audit_status='approved'
+            WHERE group_id=? AND location_key=? AND audit_status='approved'{extra_where}
             ORDER BY id
             LIMIT 8
             """,
-            (group_id, location_key),
+            tuple(params),
         ).fetchall():
             names.append(str(row["name"]))
         for row in con.execute(
