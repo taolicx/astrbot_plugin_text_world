@@ -566,13 +566,56 @@ class TextWorldDB:
                         now,
                     ),
                 )
-            elif group_origin and not row["group_origin"]:
-                con.execute(
-                    "UPDATE worlds SET group_origin=?, updated_at=? WHERE group_id=?",
-                    (group_origin, now, group_id),
-                )
+            else:
+                updates: list[str] = []
+                params: list[Any] = []
+                if group_origin and not row["group_origin"]:
+                    updates.append("group_origin=?")
+                    params.append(group_origin)
+                if int(row["cycle_minutes"] or 0) != int(cycle_minutes):
+                    updates.extend(["cycle_minutes=?", "next_tick_at=?"])
+                    params.extend([int(cycle_minutes), iso_after_minutes(int(cycle_minutes))])
+                if int(row["event_cycle_minutes"] or 0) != int(event_cycle_minutes):
+                    updates.extend(["event_cycle_minutes=?", "next_event_at=?"])
+                    params.extend([int(event_cycle_minutes), iso_after_minutes(int(event_cycle_minutes))])
+                if updates:
+                    updates.append("updated_at=?")
+                    params.append(now)
+                    params.append(group_id)
+                    con.execute(
+                        f"UPDATE worlds SET {','.join(updates)} WHERE group_id=?",
+                        tuple(params),
+                    )
             self._seed_defaults(con, group_id)
             return row_to_dict(con.execute("SELECT * FROM worlds WHERE group_id=?", (group_id,)).fetchone()) or {}
+
+        return self.run(work)
+
+    def sync_world_cycles(self, cycle_minutes: int, event_cycle_minutes: int) -> int:
+        def work(con: sqlite3.Connection) -> int:
+            now = utc_now_iso()
+            rows = con.execute("SELECT * FROM worlds").fetchall()
+            changed = 0
+            for row in rows:
+                updates: list[str] = []
+                params: list[Any] = []
+                if int(row["cycle_minutes"] or 0) != int(cycle_minutes):
+                    updates.extend(["cycle_minutes=?", "next_tick_at=?"])
+                    params.extend([int(cycle_minutes), iso_after_minutes(int(cycle_minutes))])
+                if int(row["event_cycle_minutes"] or 0) != int(event_cycle_minutes):
+                    updates.extend(["event_cycle_minutes=?", "next_event_at=?"])
+                    params.extend([int(event_cycle_minutes), iso_after_minutes(int(event_cycle_minutes))])
+                if not updates:
+                    continue
+                updates.append("updated_at=?")
+                params.append(now)
+                params.append(row["group_id"])
+                con.execute(
+                    f"UPDATE worlds SET {','.join(updates)} WHERE group_id=?",
+                    tuple(params),
+                )
+                changed += 1
+            return changed
 
         return self.run(work)
 

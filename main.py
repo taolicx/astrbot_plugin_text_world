@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +22,7 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.4.4"
+PLUGIN_VERSION = "0.4.8"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 MAP_IMAGE_FILES: tuple[str, ...] = (
@@ -144,21 +146,142 @@ class TextWorldPlugin(Star):
     def __init__(self, context: Context, config: Any):
         super().__init__(context)
         self.context = context
-        self.cfg = TextWorldConfig(config, Path(__file__).resolve().parent)
+        self._config_source = config
+        self._plugin_dir = Path(__file__).resolve().parent
+        self.cfg = TextWorldConfig(self._snapshot_config_raw(), self._plugin_dir)
+        self._config_signature = self._config_raw_signature(self.cfg.raw)
         self.db = TextWorldDB(self.cfg.db_path)
         self.service = TextWorldService(self.db, self.cfg)
         self.narrator = BatchNarrator(context, self.cfg)
-        self.web = WebPanel(self.service, self.cfg.web_host, self.cfg.web_port)
+        self.web = WebPanel(
+            self.service,
+            self.cfg.web_host,
+            self.cfg.web_port,
+            before_request=self._refresh_runtime_config_sync,
+        )
         self._scheduler_task: asyncio.Task | None = None
         self._last_event_by_group: dict[str, AstrMessageEvent] = {}
         self._settle_locks: dict[str, asyncio.Lock] = {}
+        self._config_refresh_lock = asyncio.Lock()
+        self._config_refresh_sync_lock = threading.RLock()
+        self._web_runtime: tuple[bool, str, int] = (
+            self.cfg.web_enabled,
+            self.cfg.web_host,
+            self.cfg.web_port,
+        )
 
     async def initialize(self):
         await to_thread(self.db.init, self.cfg.admin_username, self.cfg.admin_password)
+        synced = await to_thread(self.service.sync_world_cycles_from_config)
+        if synced:
+            logger.info(
+                f"[TextWorld] synced cycle settings for {synced} worlds: "
+                f"cycle={self.cfg.cycle_minutes}m event={self.cfg.event_cycle_minutes}m"
+            )
         if self.cfg.web_enabled:
             await self.web.start()
         self._scheduler_task = asyncio.create_task(self._scheduler_loop())
         logger.info("[TextWorld] initialized")
+
+    def _snapshot_config_raw(self) -> dict[str, Any]:
+        config_path = str(getattr(self._config_source, "config_path", "") or "")
+        if config_path:
+            try:
+                text = Path(config_path).read_text(encoding="utf-8-sig")
+                parsed = json.loads(text or "{}")
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception as exc:
+                logger.warning(f"[TextWorld] read plugin config failed, use in-memory config: {exc}")
+        if isinstance(self._config_source, dict):
+            return dict(self._config_source)
+        try:
+            return dict(self._config_source or {})
+        except Exception:
+            return {}
+
+    def _config_raw_signature(self, raw: dict[str, Any]) -> str:
+        try:
+            return json.dumps(raw, ensure_ascii=False, sort_keys=True, default=str)
+        except TypeError:
+            return repr(sorted((str(k), str(v)) for k, v in raw.items()))
+
+    def _apply_runtime_config(self, raw: dict[str, Any], signature: str) -> tuple[TextWorldConfig, int]:
+        old_cfg = self.cfg
+        new_cfg = TextWorldConfig(raw, self._plugin_dir)
+        self.cfg = new_cfg
+        self.service.config = new_cfg
+        self.narrator.config = new_cfg
+        self.web.host = new_cfg.web_host
+        self.web.port = new_cfg.web_port
+        synced = self.service.sync_world_cycles_from_config()
+        self._config_signature = signature
+        if (
+            old_cfg.cycle_minutes != new_cfg.cycle_minutes
+            or old_cfg.event_cycle_minutes != new_cfg.event_cycle_minutes
+        ):
+            logger.info(
+                "[TextWorld] runtime config refreshed: "
+                f"cycle {old_cfg.cycle_minutes}m->{new_cfg.cycle_minutes}m, "
+                f"event {old_cfg.event_cycle_minutes}m->{new_cfg.event_cycle_minutes}m, "
+                f"synced {synced} worlds"
+            )
+        else:
+            logger.info("[TextWorld] runtime config refreshed")
+        return new_cfg, synced
+
+    def _refresh_runtime_config_sync(self) -> int:
+        raw = self._snapshot_config_raw()
+        signature = self._config_raw_signature(raw)
+        if signature == self._config_signature:
+            return 0
+        with self._config_refresh_sync_lock:
+            raw = self._snapshot_config_raw()
+            signature = self._config_raw_signature(raw)
+            if signature == self._config_signature:
+                return 0
+            _, synced = self._apply_runtime_config(raw, signature)
+            return synced
+
+    async def _sync_web_runtime(self, cfg: TextWorldConfig) -> None:
+        target = (cfg.web_enabled, cfg.web_host, cfg.web_port)
+        current_enabled, current_host, current_port = self._web_runtime
+        if target == self._web_runtime:
+            return
+        target_enabled, target_host, target_port = target
+        if current_enabled != target_enabled:
+            if target_enabled:
+                self.web.host = target_host
+                self.web.port = target_port
+                await self.web.start()
+            else:
+                await self.web.stop()
+        elif target_enabled and (current_host != target_host or current_port != target_port):
+            await self.web.stop()
+            self.web.host = target_host
+            self.web.port = target_port
+            await self.web.start()
+        else:
+            self.web.host = target_host
+            self.web.port = target_port
+        self._web_runtime = target
+
+    async def _refresh_runtime_config(self) -> None:
+        raw = self._snapshot_config_raw()
+        signature = self._config_raw_signature(raw)
+        if signature == self._config_signature:
+            await self._sync_web_runtime(self.cfg)
+            return
+        async with self._config_refresh_lock:
+            raw = self._snapshot_config_raw()
+            signature = self._config_raw_signature(raw)
+            if signature == self._config_signature:
+                await self._sync_web_runtime(self.cfg)
+                return
+
+            with self._config_refresh_sync_lock:
+                new_cfg, _ = self._apply_runtime_config(raw, signature)
+            await self._sync_web_runtime(new_cfg)
 
     async def terminate(self):
         if self._scheduler_task:
@@ -172,14 +295,17 @@ class TextWorldPlugin(Star):
 
     @filter.command("世界帮助", alias={"文游帮助", "世界菜单"})
     async def world_help(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         yield event.plain_result(help_text()).stop_event()
 
     @filter.command("角色卡模板", alias={"角色模板", "创建格式"})
     async def character_template(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         yield event.plain_result(CHARACTER_CARD_TEMPLATE).stop_event()
 
     @filter.command("世界开启", alias={"开启世界", "文游开启"})
     async def open_world(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if self._is_private_chat(event):
             yield event.plain_result("世界开启需要在目标群里使用，私聊不能开启群世界。").stop_event()
             return
@@ -187,6 +313,7 @@ class TextWorldPlugin(Star):
 
     @filter.command("创建角色", alias={"角色创建", "创建人物"})
     async def create_character(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if self._is_private_chat(event):
             yield event.plain_result("创建角色请在要游玩的群里提交，私聊只用于绑定和查询。").stop_event()
             return
@@ -194,18 +321,22 @@ class TextWorldPlugin(Star):
 
     @filter.command("行动", alias={"文游行动", "提交行动"})
     async def submit_action(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         yield event.plain_result(await self._handle_submit_action(event)).stop_event()
 
     @filter.command("状态", alias={"我的状态", "状态栏"})
     async def status(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         yield event.plain_result(await self._handle_status(event)).stop_event()
 
     @filter.command("任务", alias={"今日任务", "引导"})
     async def tasks(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         yield event.plain_result(await self._handle_tasks(event)).stop_event()
 
     @filter.command("地图", alias={"世界地图"})
     async def map_cmd(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         result = await self._handle_map_images(event)
         if result:
             yield result.stop_event()
@@ -214,20 +345,24 @@ class TextWorldPlugin(Star):
 
     @filter.command("待结算", alias={"本轮行动", "行动列表"})
     async def pending(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         yield event.plain_result(await self._handle_pending(event)).stop_event()
 
     @filter.command("签到", alias={"每日签到"})
     async def checkin(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         yield event.plain_result(await self._handle_checkin(event)).stop_event()
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     @filter.command("绑定文游私聊", alias={"绑定世界私聊", "文游私聊绑定"})
     async def bind_private(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         yield event.plain_result(await self._bind_private_text(event)).stop_event()
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界结算", alias={"文游结算", "立即结算"})
     async def manual_settle(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if self._is_private_chat(event):
             yield event.plain_result("世界结算需要在目标群里使用，私聊不能结算群世界。").stop_event()
             return
@@ -236,6 +371,7 @@ class TextWorldPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界事件", alias={"文游事件", "触发事件"})
     async def manual_event(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if self._is_private_chat(event):
             yield event.plain_result("世界事件需要在目标群里使用，私聊不能触发群事件。").stop_event()
             return
@@ -244,6 +380,7 @@ class TextWorldPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("世界后台", alias={"文游后台"})
     async def web_url(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if self._is_private_chat(event):
             yield event.plain_result("世界后台入口请在目标群里使用管理员指令查看。").stop_event()
             return
@@ -254,6 +391,7 @@ class TextWorldPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("待审核角色", alias={"待审核列表", "角色审核列表"})
     async def pending_cards(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if self._is_private_chat(event):
             yield event.plain_result("待审核角色列表需要在目标群里查看。").stop_event()
             return
@@ -262,6 +400,7 @@ class TextWorldPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("审核角色", alias={"角色审核", "批准角色", "通过角色", "拒绝角色"})
     async def audit_character(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if self._is_private_chat(event):
             yield event.plain_result("角色审核需要在目标群里使用。").stop_event()
             return
@@ -269,6 +408,7 @@ class TextWorldPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE, priority=50)
     async def world_group_listener(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if not self.cfg.enable_world_chat_silence:
             return
         group_id = self._group_id(event)
@@ -300,6 +440,7 @@ class TextWorldPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE, priority=50)
     async def world_private_listener(self, event: AstrMessageEvent):
+        await self._refresh_runtime_config()
         if not self.cfg.enable_world_chat_silence:
             return
         command = self._parse_text_world_command(event, PRIVATE_TEXT_COMMANDS)
@@ -714,6 +855,7 @@ class TextWorldPlugin(Star):
     async def _scheduler_loop(self):
         while True:
             try:
+                await self._refresh_runtime_config()
                 due = await to_thread(self.service.due_worlds)
                 for world in due:
                     await self._settle_group(world["group_id"], self._last_event_by_group.get(world["group_id"]))

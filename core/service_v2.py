@@ -53,6 +53,12 @@ class TextWorldService:
             self.config.event_cycle_minutes,
         )
 
+    def sync_world_cycles_from_config(self) -> int:
+        return self.db.sync_world_cycles(
+            self.config.cycle_minutes,
+            self.config.event_cycle_minutes,
+        )
+
     def world_is_enabled(self, group_id: str) -> bool:
         group_id = str(group_id or "").strip()
         if not group_id:

@@ -5,7 +5,7 @@ import json
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
 from .compat import to_thread
@@ -1240,10 +1240,17 @@ load();
 
 
 class WebPanel:
-    def __init__(self, service: TextWorldService, host: str, port: int):
+    def __init__(
+        self,
+        service: TextWorldService,
+        host: str,
+        port: int,
+        before_request: Callable[[], None] | None = None,
+    ):
         self.service = service
         self.host = host
         self.port = port
+        self.before_request = before_request
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -1254,6 +1261,7 @@ class WebPanel:
 
     def _start_sync(self) -> None:
         service = self.service
+        before_request = self.before_request
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, fmt: str, *args: Any) -> None:
@@ -1265,6 +1273,7 @@ class WebPanel:
                     self._send_html(HTML)
                     return
                 if parsed.path == "/api/snapshot":
+                    self._refresh_runtime_config()
                     user = self._auth()
                     if not user:
                         self._send_json({"error": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
@@ -1291,6 +1300,7 @@ class WebPanel:
                     if not user:
                         self._send_json({"error": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
                         return
+                    self._refresh_runtime_config()
                     if parsed.path == "/api/change-password":
                         ok, msg = service.db.change_password(
                             int(user["id"]),
@@ -1332,6 +1342,14 @@ class WebPanel:
                 if auth.startswith("Bearer "):
                     return service.db.user_by_session(auth[7:].strip())
                 return None
+
+            def _refresh_runtime_config(self) -> None:
+                if not before_request:
+                    return
+                try:
+                    before_request()
+                except Exception as exc:
+                    logger.warning(f"[TextWorldWeb] runtime config refresh skipped: {exc}")
 
             def _require_admin(self, user: dict[str, Any]) -> None:
                 if user.get("role") != "admin":

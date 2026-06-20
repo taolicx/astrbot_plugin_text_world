@@ -487,3 +487,33 @@
 - `git diff --check`：通过，仅有 CRLF 换行提示。
 - 临时 SQLite 全量回归通过：无人行动环境结果、主动听隔壁动静、未审核不发送、公共事件余波、AI 缺少玩家结果时回退、附近可见不包含当前玩家。
 - 回归输出：`FULL_REGRESSION_OK {'round_ambient': 2, 'round_public': 1} ['1001', '1002']`。
+
+## 2026-06-19 周期实时同步修复
+
+### 本轮反馈
+
+- 客户反馈行动周期和事件周期在后台修改后，已有世界无法实时同步。
+
+### 根因
+
+- `cycle_minutes` 和 `event_cycle_minutes` 会落库到 `worlds` 表，已有世界的 `next_tick_at` / `next_event_at` 也按表内周期推进。
+- AstrBot 后台保存插件配置会写配置文件并热重载插件，但运行中的插件对象仍可能继续持有旧 `TextWorldConfig` 实例。
+- 旧实现只在新建世界时写周期，已有世界不会因为后台配置改动自动重算下一次结算/事件时间。
+
+### 本轮修复
+
+- 新增数据库级 `sync_world_cycles()`，批量同步所有已有世界的行动周期和事件周期，并从当前时间重算下次结算/下次事件。
+- `ensure_world()` 对已有世界也会检查并同步周期，避免旧世界再次被打开或查询时沿用旧值。
+- 插件启动/重载后会自动同步配置周期到所有世界。
+- 新增运行中配置热刷新：调度器轮询、群聊/私聊监听器、玩家命令、管理员命令都会检测插件配置文件是否变化；变化后更新 `self.cfg`、服务层、旁白层，并同步数据库周期。
+- 内置 WebUI 的 `/api/snapshot` 和后台写入接口请求也会触发同步刷新，打开后台即可看到更新后的周期和下一次时间。
+- WebUI 启停/端口变化会由异步入口补齐重启，周期类配置不受端口重启限制。
+- 插件版本号更新为 `0.4.8`。
+
+### 本轮验证
+
+- `python -m compileall -q core main.py`：通过。
+- `_conf_schema.json` JSON 解析：通过。
+- `git diff --check`：通过，仅有 CRLF 换行提示。
+- 临时 SQLite 回归通过：先以 60/120 分钟创建旧世界，再把配置切到 5/10 分钟，`sync_world_cycles_from_config()` 立即更新 `worlds.cycle_minutes`、`worlds.event_cycle_minutes`、`next_tick_at` 和 `next_event_at`；再次通过 `ensure_world()` 切到 15/30 分钟也能同步。
+- 回归输出：`CYCLE_SYNC_REGRESSION_OK`。
