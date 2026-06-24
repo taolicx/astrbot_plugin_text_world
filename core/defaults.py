@@ -100,8 +100,8 @@ DEFAULT_LOCATIONS: dict[str, DefaultLocation] = {
     ),
     "dorm": DefaultLocation(
         id="dorm",
-        name="第七学区学生寮",
-        description="学生生活区。休息、串门、小交易、补课通知和深夜传闻都常在这里发生。",
+        name="学生宿舍区",
+        description="身份相关的学生生活区。休息、串门、小交易、补课通知和深夜传闻都常在这里发生；常盘台、栅川、某高中等不同身份会在私聊结果中显示对应宿舍名称。",
         neighbors=["school_gate", "classroom", "canteen", "plaza", "family_restaurant"],
         tags=["第七学区", "生活", "休息"],
     ),

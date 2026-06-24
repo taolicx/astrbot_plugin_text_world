@@ -367,7 +367,7 @@ class TextWorldService:
             for outcome in outcomes:
                 private_text = self._ensure_sendable_text(
                     self._build_private_result(con, group_id, round_no, outcome, time_context),
-                    f"【第 {round_no} 轮个人结果】\n世界时间：{time_context['display']}\n本轮个人结果已记录，但文本生成异常，请联系管理员查看历史。",
+                    f"【第 {round_no} 轮个人结果】\n世界时间：{time_context['display']}\n本轮结算已落地；现场信息已转为程序简报，请以当前位置、状态变化和历史记录作为下一轮行动依据。",
                 )
                 private_results[str(outcome["qq_id"])] = private_text
                 con.execute(
@@ -388,7 +388,7 @@ class TextWorldService:
                     continue
                 ambient_text = self._ensure_sendable_text(
                     self._build_idle_private_result(con, group_id, round_no, player, time_context, active_event, npc_updates),
-                    f"【第 {round_no} 轮个人结果】\n世界时间：{time_context['display']}\n你本轮没有提交行动，位置和状态维持在当前区域；附近环境仍按世界时间推进。",
+                    f"【第 {round_no} 轮个人结果】\n世界时间：{time_context['display']}\n这一轮你暂时停留在当前区域，周围的广播、人流、门禁和终端通知仍在按现实时间推进。",
                 )
                 private_results[qq_id] = ambient_text
                 con.execute(
@@ -457,7 +457,7 @@ class TextWorldService:
     ) -> dict[str, str]:
         public_summary = self._ensure_sendable_text(
             public_summary,
-            f"【第 {round_no} 轮学园都市更新】\n本轮公共摘要生成异常，请联系管理员查看历史。",
+            f"【第 {round_no} 轮学园都市更新】\n本轮公共摘要暂未形成完整新闻稿；各区域广播、学生传闻和个人结果仍会继续推进下一轮剧情。",
         )
         public_summary = self._with_private_delivery_note(public_summary)
         merged_results: dict[str, str] = {}
@@ -473,7 +473,7 @@ class TextWorldService:
                     public_summary,
                     "",
                     f"【第 {round_no} 轮个人结果】",
-                    "你本轮没有提交行动，也没有被其他玩家行动直接影响；仅接收本轮世界事件和新闻摘要。",
+                    "这一轮你没有主动外出，也没有被其他玩家行动直接卷入；你收到的是本轮世界事件、新闻传闻和周边环境变化，可作为下一轮行动的切入口。",
                 ]
             )
             merged_results[qq_text] = self._clip_text(event_only, self.config.public_summary_max_chars + 500)
@@ -619,6 +619,7 @@ class TextWorldService:
 
     def _task_text_for_char(self, con: sqlite3.Connection, char: sqlite3.Row) -> str:
         loc = self._location(con, char["group_id"], char["location_key"])
+        loc_name = self._location_display_name(loc, char)
         task = self._daily_task_hint(char)
         identity_tasks = self._identity_task_suggestions(str(char["identity"] or ""), str(char["faction"] or ""))
         growth_tasks = self._growth_task_suggestions(char)
@@ -626,7 +627,7 @@ class TextWorldService:
         lines = [
             f"【{char['game_name']} 的今日引导】",
             f"现实时间：{time_context['display']}",
-            f"当前位置：{loc['name'] if loc else char['location_key']}",
+            f"当前位置：{loc_name}",
             f"当前引导：{task}",
             f"声望等级：{self._reputation_label(int_value(char['reputation'], 0))}",
             "可选任务：",
@@ -655,14 +656,15 @@ class TextWorldService:
             if char:
                 loc = self._location(con, group_id, char["location_key"])
                 if loc:
-                    lines.append(f"当前位置：{loc['name']} - {loc['description']}")
-                    neighbors = self._neighbor_names(con, group_id, char["location_key"])
+                    lines.append(f"当前位置：{self._location_display_name(loc, char)} - {loc['description']}")
+                    neighbors = self._neighbor_names(con, group_id, char["location_key"], actor=char)
                     lines.append("可前往：" + ("、".join(neighbors) if neighbors else "无"))
                     lines.append("")
             lines.append("地点连接：")
             for loc in locations:
-                neighbors = self._neighbor_names(con, group_id, loc["location_key"])
-                lines.append(f"- {loc['name']} -> {'、'.join(neighbors) if neighbors else '无'}")
+                neighbors = self._neighbor_names(con, group_id, loc["location_key"], actor=char)
+                loc_name = self._location_display_name(loc, char)
+                lines.append(f"- {loc_name} -> {'、'.join(neighbors) if neighbors else '无'}")
             return "\n".join(lines)
 
         return self.db.run(work)
@@ -1040,7 +1042,7 @@ class TextWorldService:
 
     def format_status(self, con: sqlite3.Connection, char: sqlite3.Row | dict[str, Any]) -> str:
         location = self._location(con, char["group_id"], char["location_key"])
-        location_name = location["name"] if location else char["location_key"]
+        location_name = self._location_display_name(location, char)
         inv = con.execute(
             "SELECT item_name,quantity FROM inventory WHERE character_id=? AND quantity>0 ORDER BY item_name",
             (char["id"],),
@@ -1108,9 +1110,10 @@ class TextWorldService:
         location_key: str,
         text: str,
         game_name: str = "",
+        actor: sqlite3.Row | dict[str, Any] | None = None,
     ) -> str:
         loc = self._location(con, group_id, location_key)
-        loc_name = str(loc["name"] if loc else location_key or "当前位置")
+        loc_name = self._location_display_name(loc, actor)
         phase = str(self.current_time_context().get("phase") or "当前时段")
         action_text = self.clean_text(text, 90)
         if any(word in text for word in ("观察", "查看", "看看", "盯", "巡查", "巡视")):
@@ -1118,15 +1121,15 @@ class TextWorldService:
         if any(word in text for word in ("调查", "打听", "询问", "寻找线索", "查", "问")):
             return f"{game_name or '你'}在{loc_name}围绕“{action_text}”展开调查。本轮只得到公开传闻和可接触线索，未突破权限边界。"
         if any(word in text for word in ("等待", "蹲守", "守着", "等人")):
-            return f"{game_name or '你'}在{loc_name}等待目标或机会。{phase}的环境让行动节奏放慢，你没有获得直接奖励，但保留了后续接触的可能。"
+            return f"{game_name or '你'}在{loc_name}等待目标或机会。{phase}的环境让行动节奏放慢，几条人声、脚步和终端提示被留作后续接触的切入口。"
         if any(word in text for word in ("串门", "隔壁", "窗外", "走廊", "门外", "听见", "听到", "声音", "动静")):
-            ambient = self._ambient_scene_for_location(con, group_id, location_key, self.current_time_context(), None, [])
-            return f"{game_name or '你'}在{loc_name}把注意力放到附近动静上。{ambient} 这类线索还没有自动发展成正式事件，但可以作为下一轮继续追过去、敲门或询问的起点。"
+            ambient = self._ambient_scene_for_location(con, group_id, location_key, self.current_time_context(), None, [], actor=actor)
+            return f"{game_name or '你'}在{loc_name}把注意力放到附近动静上。{ambient} 这些线索已经足够支撑下一轮继续追过去、敲门或询问。"
         if any(word in text for word in ("上课", "学习", "自习", "补习", "写作业", "读书")):
             return f"{game_name or '你'}在{loc_name}完成了一段学习安排。课程、终端资料和周围学生的讨论让你对当下局势有了更清晰的判断。"
         if any(word in text for word in ("散步", "闲逛", "逛", "巡逻", "巡街")):
-            return f"{game_name or '你'}沿着{loc_name}附近活动了一圈。{phase}的街区没有立刻爆发事件，但你注意到几处适合下轮继续追查的细节。"
-        return f"{game_name or '你'}在{loc_name}推进了本轮行动：“{action_text}”。这次行动没有产生可量化的金钱、背包或伤害变化，但现场位置、时间和人物状态已经被记录，可作为下一轮继续互动的铺垫。"
+            return f"{game_name or '你'}沿着{loc_name}附近活动了一圈。{phase}的街区把店铺广播、学生闲聊和巡逻路线交织在一起，留下几处适合下轮继续追查的细节。"
+        return f"{game_name or '你'}在{loc_name}推进了本轮行动：“{action_text}”。现场的位置、时间、人声和人物状态已经形成新的铺垫，下一轮可以继续互动或追线索。"
 
     def _resolve_rest(
         self,
@@ -1137,7 +1140,7 @@ class TextWorldService:
         location_key: str,
     ) -> tuple[str, int, int, int, int, int, int]:
         loc = self._location(con, group_id, location_key)
-        loc_name = str(loc["name"] if loc else location_key or "当前位置")
+        loc_name = self._location_display_name(loc, row)
         tags = set(loads(str(loc["tags"] or "[]"), []) if loc else [])
         lower = text.lower()
         facility_words = ("宿舍", "床", "休息室", "酒店", "医院", "诊疗", "按摩", "温泉", "家庭餐厅", "付费", "花钱", "胶囊旅馆")
@@ -1205,7 +1208,7 @@ class TextWorldService:
         death_protection_delta = 0
         development_mark = ""
         location_key = row["location_key"]
-        summary = self._generic_action_summary(con, group_id, row["location_key"], text, row["game_name"])
+        summary = self._generic_action_summary(con, group_id, row["location_key"], text, row["game_name"], row)
         accepted = True
         pvp_targets = pvp_targets or []
         pvp_intent = self._looks_like_pvp(text) or bool(pvp_targets)
@@ -1221,7 +1224,7 @@ class TextWorldService:
             movement_path = self._movement_path(con, group_id, row["location_key"], target["location_key"])
             if movement_path:
                 location_key = target["location_key"]
-                summary = self._movement_summary(con, group_id, old_location, movement_path)
+                summary = self._movement_summary(con, group_id, old_location, movement_path, row)
                 energy_delta = -6 - max(1, len(movement_path) - 1) * 4
                 if len(movement_path) > 2:
                     warnings.append("本轮跨越了多段路线，路上可能出现传闻、偶遇或轻微消耗。")
@@ -1231,7 +1234,10 @@ class TextWorldService:
             else:
                 accepted = False
                 target_name = target["name"]
-                summary = f"你尝试前往{target_name}，但超过本轮可移动范围或地图路线不成立，本轮留在原地。"
+                summary = (
+                    f"你把目标定在{target_name}，但本轮路线和时间不足以抵达；"
+                    "最终停在原区域附近，沿途方向、换乘点和下一步可走路线已经确认。"
+                )
                 warnings.append(f"地图规则拦截：当前位置不能在 {self.config.max_move_steps} 格内前往{target_name}。")
                 energy_delta = -2
             restricted_warning = self._restricted_location_warning(target, text, row) if accepted else ""
@@ -1733,13 +1739,14 @@ class TextWorldService:
         time_context = time_context or self.current_time_context()
         lines = [f"【第 {round_no} 轮个人结果】", f"世界时间：{time_context['display']}", outcome["summary"]]
         if loc:
-            lines.append(f"当前位置：{loc['name']}")
+            lines.append(f"当前位置：{self._location_display_name(loc, char)}")
             mini_map = self._mini_map_text(
                 con,
                 group_id,
                 str(outcome["location_key"]),
                 outcome.get("movement_path") or [],
                 exclude_character_id=int(outcome.get("character_id") or 0),
+                actor=char,
             )
             if mini_map:
                 lines.append(mini_map)
@@ -1775,16 +1782,16 @@ class TextWorldService:
     ) -> str:
         location_key = str(char["location_key"] or "")
         loc = self._location(con, group_id, location_key)
-        loc_name = str(loc["name"] if loc else location_key or "当前位置")
+        loc_name = self._location_display_name(loc, char)
         time_context = time_context or self.current_time_context()
         lines = [
             f"【第 {round_no} 轮个人结果】",
             f"世界时间：{time_context['display']}",
-            "你本轮没有提交行动，位置、背包和主要状态没有主动变化；但你所在区域仍然在按现实时间流动。",
+            f"这一轮你暂时停留在{loc_name}，没有主动外出；周围的课程、门禁、广播和人声仍在按现实时间流动。",
         ]
         if loc:
             lines.append(f"当前位置：{loc_name}")
-            mini_map = self._mini_map_text(con, group_id, location_key, [], exclude_character_id=int(char["id"]))
+            mini_map = self._mini_map_text(con, group_id, location_key, [], exclude_character_id=int(char["id"]), actor=char)
             if mini_map:
                 lines.append(mini_map)
         ambient = self._ambient_scene_for_location(
@@ -1795,6 +1802,7 @@ class TextWorldService:
             event,
             npc_updates or [],
             exclude_character_id=int(char["id"]),
+            actor=char,
         )
         if ambient:
             lines.append("附近动静：" + ambient)
@@ -1805,7 +1813,7 @@ class TextWorldService:
                 lines.append(f"公共事件余波：{title} - {description}")
         elif npc_updates:
             lines.append("街头传闻：" + random.choice(npc_updates))
-        lines.append("提示：如果你想参与这些动静，下一轮可以写“去看窗外发生了什么”“去隔壁串门”“跟着声音过去”等行动。")
+        lines.append("下一轮可顺着这些动静继续推进，例如查看窗外、去隔壁串门、跟着声音过去或向附近的人打听。")
         lines.append(
             f"状态：生命 {char['hp']}/100，精力 {char['energy']}/100，水分 {char['water']}/100，饱食度 {char['satiety']}/100，心情 {char['mood']}/100，学都币 {char['money']}"
         )
@@ -1820,15 +1828,16 @@ class TextWorldService:
         event: dict[str, Any] | None = None,
         npc_updates: list[str] | None = None,
         exclude_character_id: int | None = None,
+        actor: sqlite3.Row | dict[str, Any] | None = None,
     ) -> str:
         loc = self._location(con, group_id, location_key)
-        loc_name = str(loc["name"] if loc else location_key or "当前位置")
+        loc_name = self._location_display_name(loc, actor)
         phase = str((time_context or {}).get("phase") or "")
         nearby = [name for name in self._nearby_actor_names(con, group_id, location_key, exclude_character_id=exclude_character_id) if name]
         event_desc = self.clean_text(str((event or {}).get("description") or ""), 120) if event else ""
         chance = int(getattr(self.config, "ambient_event_chance_percent", 65) or 0)
         if not event_desc and not nearby and not npc_updates and random.randint(1, 100) > chance:
-            return f"{loc_name}附近暂时没有明显骚动，但广播、脚步声和终端通知仍在按世界时间刷新。"
+            return f"{loc_name}附近的广播、脚步声和终端通知仍在按世界时间刷新，几条零散信息正适合作为下一轮的切入点。"
         if location_key == "dorm":
             choices = [
                 "隔壁宿舍传来拖椅子和压低的说话声，像是有人在临时讨论明天的课程或能力测定。",
@@ -1838,7 +1847,7 @@ class TextWorldService:
                 "隔壁传出零食包装和终端提示音，像是有人在准备小型串门或夜宵活动。",
             ]
             if "深夜" in phase or "夜间" in phase:
-                choices.append("窗外街灯把学生寮外墙照得发白，偶尔能听见远处地铁或巡逻无人机掠过的声音。")
+                choices.append(f"窗外街灯把{loc_name}外墙照得发白，偶尔能听见远处地铁或巡逻无人机掠过的声音。")
             return random.choice(choices) + (f" 这和本轮公共事件的余波隐约相连：{event_desc}" if event_desc else "")
         if location_key in {"classroom", "school_gate", "sakugawa", "tokiwa_dai", "gakusha_no_sono"}:
             choices = [
@@ -1862,12 +1871,12 @@ class TextWorldService:
             ]
             return random.choice(choices) + (f" 公开层面能确认的是：{event_desc}" if event_desc else "")
         if nearby:
-            return f"{loc_name}附近能看见或听见{nearby[0]}的动静，但距离还不足以自动展开正式互动。"
+            return f"{loc_name}附近能看见或听见{nearby[0]}的动静，已经足以成为下一轮主动靠近、搭话或观察的线索。"
         if npc_updates:
             return random.choice(npc_updates)
         if event_desc:
             return f"{loc_name}附近也能感觉到公共事件的余波：{event_desc}"
-        return f"{loc_name}附近没有爆发公开冲突，但广播、脚步声和终端通知仍在给下一轮留下线索。"
+        return f"{loc_name}附近的广播、脚步声和终端通知交替出现，给下一轮留下了可以继续追踪的线索。"
 
     def _delta_label(self, key: str) -> str:
         return {
@@ -1903,7 +1912,9 @@ class TextWorldService:
                 if new:
                     con.execute("UPDATE npcs SET location_key=?, updated_at=? WHERE id=?", (expected_key, utc_now_iso(), npc["id"]))
                     if old and old_was_reasonable:
-                        updates.append(f"{npc['name']}按现实时间从{old['name']}沿正常路线回到{new['name']}")
+                        updates.append(
+                            f"{npc['name']}按现实时间从{self._location_display_name(old)}沿正常路线回到{self._location_display_name(new)}"
+                        )
                 continue
             neighbors = con.execute(
                 "SELECT to_location_key FROM location_edges WHERE group_id=? AND from_location_key=?",
@@ -1919,7 +1930,7 @@ class TextWorldService:
             new = self._location(con, group_id, next_key)
             con.execute("UPDATE npcs SET location_key=?, updated_at=? WHERE id=?", (next_key, utc_now_iso(), npc["id"]))
             if old and new:
-                updates.append(f"{npc['name']}从{old['name']}沿正常路线去了{new['name']}")
+                updates.append(f"{npc['name']}从{self._location_display_name(old)}沿正常路线去了{self._location_display_name(new)}")
         return updates
 
     def _npc_expected_location(self, con: sqlite3.Connection, group_id: str, npc: sqlite3.Row) -> str:
@@ -2032,7 +2043,7 @@ class TextWorldService:
 
     def _random_event(self, con: sqlite3.Connection, group_id: str) -> dict[str, Any]:
         locations = con.execute("SELECT * FROM locations WHERE group_id=? ORDER BY RANDOM() LIMIT 1", (group_id,)).fetchone()
-        loc_name = locations["name"] if locations else "学园都市"
+        loc_name = self._location_display_name(locations) if locations else "学园都市"
         return {
             "title": "随机公共事件",
             "description": f"{loc_name}附近出现新动向：{random.choice(EVENT_SEEDS)}",
@@ -2877,6 +2888,44 @@ class TextWorldService:
     def _location(self, con: sqlite3.Connection, group_id: str, key: str) -> sqlite3.Row | None:
         return con.execute("SELECT * FROM locations WHERE group_id=? AND location_key=?", (group_id, key)).fetchone()
 
+    def _location_display_name(
+        self,
+        loc: sqlite3.Row | dict[str, Any] | None,
+        actor: sqlite3.Row | dict[str, Any] | None = None,
+    ) -> str:
+        if not loc:
+            return "当前位置"
+        key = str(loc["location_key"] if isinstance(loc, sqlite3.Row) else loc.get("location_key", ""))
+        if key == "dorm":
+            return self._identity_dorm_name(actor)
+        return str(loc["name"] if isinstance(loc, sqlite3.Row) else loc.get("name", key or "当前位置"))
+
+    def _identity_dorm_name(self, actor: sqlite3.Row | dict[str, Any] | None = None) -> str:
+        if not actor:
+            return "学生宿舍区"
+        if isinstance(actor, sqlite3.Row):
+            identity = str(actor["identity"] if "identity" in actor.keys() else "")
+            faction = str(actor["faction"] if "faction" in actor.keys() else "")
+        else:
+            identity = str(actor.get("identity", ""))
+            faction = str(actor.get("faction", ""))
+        text = f"{identity} {faction}"
+        if self._identity_matches_school(text, "tokiwadai"):
+            return "常盘台校外宿舍"
+        if self._identity_matches_school(text, "sakugawa"):
+            return "栅川中学学生宿舍"
+        if self._identity_matches_school(text, "kamijou"):
+            return "第七学区某高中学生寮"
+        if "风纪委员" in text or "Judgment" in text:
+            return "风纪委员支部值班宿舍"
+        if "警备员" in text or "Anti-Skill" in text or "教师" in text:
+            return "警备员/教师值班休息区"
+        if any(word in text for word in ("研究", "实习", "实验室", "研究所")):
+            return "研究机构临时住宿区"
+        if self._identity_matches_school(text, "any"):
+            return "所属学校学生寮"
+        return "学生宿舍区"
+
     def _map_context(self, con: sqlite3.Connection, group_id: str, compact: bool = True) -> dict[str, Any]:
         location_rows = con.execute(
             "SELECT location_key,name,description,tags,sort_order FROM locations WHERE group_id=? ORDER BY sort_order, id",
@@ -2889,9 +2938,11 @@ class TextWorldService:
                 tags = []
             item = {
                 "key": str(row["location_key"]),
-                "name": str(row["name"]),
+                "name": self._location_display_name(row),
                 "tags": [str(tag) for tag in tags[:5]],
             }
+            if str(row["location_key"]) == "dorm":
+                item["note"] = "宿舍是身份相关地点；具体名称以 players.location_name 为准。"
             if not compact:
                 item["description"] = self.clean_text(str(row["description"] or ""), 180)
             locations.append(item)
@@ -2912,10 +2963,16 @@ class TextWorldService:
                 "name": str(row["game_name"]),
                 "qq_id": str(row["qq_id"]),
                 "location_key": str(row["location_key"]),
+                "location_name": self._location_display_name(
+                    self._location(con, group_id, str(row["location_key"])),
+                    row,
+                ),
+                "identity": self.clean_text(str(row["identity"] or ""), 60),
+                "faction": self.clean_text(str(row["faction"] or ""), 40),
             }
             for row in con.execute(
                 """
-                SELECT qq_id,game_name,location_key
+                SELECT qq_id,game_name,identity,faction,location_key
                 FROM characters
                 WHERE group_id=? AND audit_status='approved'
                 ORDER BY id
@@ -2945,7 +3002,8 @@ class TextWorldService:
         return {
             "rule": (
                 "这是本轮结算的小地图。叙事必须按 locations/edges/players/npcs 理解地点、相邻关系和角色位置；"
-                "不得让角色瞬移；玩家说“门口/附近/宿舍门前”时，优先按当前位置附近和相邻地点处理。"
+                "不得让角色瞬移；玩家说“门口/附近/宿舍门前”时，优先按当前位置附近和相邻地点处理；"
+                "players.location_name 是按角色身份修正后的地点名，尤其是 dorm/宿舍，叙事必须优先使用它。"
             ),
             "max_move_steps": int(getattr(self.config, "max_move_steps", 3) or 0),
             "locations": locations,
@@ -2962,6 +3020,7 @@ class TextWorldService:
         movement_path: list[str] | tuple[str, ...] | None = None,
         *,
         exclude_character_id: int | None = None,
+        actor: sqlite3.Row | dict[str, Any] | None = None,
     ) -> str:
         location_key = str(location_key or "").strip()
         if not location_key:
@@ -2969,14 +3028,14 @@ class TextWorldService:
         current = self._location(con, group_id, location_key)
         if not current:
             return ""
-        neighbors = self._neighbor_names(con, group_id, location_key)
-        lines = [f"位置小地图：你在【{current['name']}】。"]
+        neighbors = self._neighbor_names(con, group_id, location_key, actor=actor)
+        lines = [f"位置小地图：你在【{self._location_display_name(current, actor)}】。"]
         clean_path = [str(item) for item in (movement_path or []) if str(item or "").strip()]
         if len(clean_path) > 1:
             path_names: list[str] = []
             for key in clean_path:
                 loc = self._location(con, group_id, key)
-                path_names.append(str(loc["name"] if loc else key))
+                path_names.append(self._location_display_name(loc, actor) if loc else key)
             lines.append("本轮路线：" + " → ".join(path_names))
         if neighbors:
             lines.append("相邻可去：" + "、".join(neighbors[:8]))
@@ -3042,12 +3101,18 @@ class TextWorldService:
         if existing and str(existing["qq_id"]) != str(qq_id) and int(existing["id"]) != int(character_id or 0):
             raise ValueError("这个游戏名对应的前端账号已被其他 QQ 使用。")
 
-    def _neighbor_names(self, con: sqlite3.Connection, group_id: str, key: str) -> list[str]:
+    def _neighbor_names(
+        self,
+        con: sqlite3.Connection,
+        group_id: str,
+        key: str,
+        actor: sqlite3.Row | dict[str, Any] | None = None,
+    ) -> list[str]:
         return [
-            row["name"]
+            self._location_display_name(row, actor)
             for row in con.execute(
                 """
-                SELECT locations.name FROM location_edges
+                SELECT locations.location_key, locations.name FROM location_edges
                 JOIN locations ON locations.group_id=location_edges.group_id AND locations.location_key=location_edges.to_location_key
                 WHERE location_edges.group_id=? AND location_edges.from_location_key=?
                 ORDER BY locations.sort_order
@@ -3099,13 +3164,14 @@ class TextWorldService:
         group_id: str,
         old_location: sqlite3.Row | None,
         path: list[str],
+        actor: sqlite3.Row | dict[str, Any] | None = None,
     ) -> str:
         if len(path) <= 1:
-            return f"你留在{old_location['name'] if old_location else '原地'}附近行动。"
+            return f"你留在{self._location_display_name(old_location, actor) if old_location else '原地'}附近行动。"
         names = []
         for key in path:
             loc = self._location(con, group_id, key)
-            names.append(str(loc["name"] if loc else key))
+            names.append(self._location_display_name(loc, actor) if loc else key)
         if len(names) <= 2:
             return f"你从{names[0]}去了{names[-1]}。"
         return f"你从{names[0]}出发，途经{'、'.join(names[1:-1])}，抵达{names[-1]}。"
@@ -3145,13 +3211,14 @@ class TextWorldService:
                     "memory": self.clean_text(npc["memory"], 160),
                 }
                 reaction = self._npc_scene_reaction(npc_dict, self._looks_like_battle(text), text)
+                loc_name = self._location_display_name(loc, row)
                 if reaction:
                     self._adjust_npc_relationship(con, group_id, int(row["character_id"]), str(npc["npc_key"]), 1)
-                    return f"途经{loc['name']}时，{reaction}"
-                return f"途经{loc['name']}时，你和{npc['name']}擦肩而过，对方的反应被记录为后续可能的交集。"
+                    return f"途经{loc_name}时，{reaction}"
+                return f"途经{loc_name}时，你和{npc['name']}擦肩而过，对方的反应被记录为后续可能的交集。"
             if random.random() < 0.5:
                 seed = random.choice(EVENT_SEEDS)
-                return f"途经{loc['name']}时，路边新闻屏和学生议论提到“{seed}”，这条传闻可能在后续回合发酵。"
+                return f"途经{self._location_display_name(loc, row)}时，路边新闻屏和学生议论提到“{seed}”，这条传闻可能在后续回合发酵。"
         return ""
 
     def _projected_action_location(self, con: sqlite3.Connection, group_id: str, action: dict[str, Any]) -> str:
@@ -3355,13 +3422,28 @@ class TextWorldService:
                 "学生宿舍门口",
                 "宿舍楼下",
                 "宿舍楼门口",
+            )
+        elif key == "gakusha_no_sono":
+            aliases = (
+                "学舍之园宿舍",
+                "学舍之园宿舍门前",
+                "学舍之园宿舍门口",
                 "常盘台宿舍门前",
                 "常盘台宿舍门口",
                 "常盘台宿舍",
+                "常盘台校外宿舍",
                 "黑子宿舍门前",
                 "黑子宿舍门口",
                 "御坂美琴宿舍门前",
                 "御坂美琴宿舍门口",
+            )
+        elif key == "sakugawa":
+            aliases = (
+                "栅川宿舍",
+                "栅川中学宿舍",
+                "栅川学生宿舍",
+                "栅川宿舍门前",
+                "栅川宿舍门口",
             )
         elif key == "hospital":
             aliases = (
@@ -3444,13 +3526,14 @@ class TextWorldService:
         roster: dict[str, list[str]] = defaultdict(list)
         for row in con.execute(
             """
-            SELECT locations.name AS location_name, characters.game_name AS name
+            SELECT characters.*
             FROM characters JOIN locations ON locations.group_id=characters.group_id AND locations.location_key=characters.location_key
             WHERE characters.group_id=? AND characters.audit_status='approved'
             """,
             (group_id,),
         ).fetchall():
-            roster[row["location_name"]].append(row["name"])
+            loc = self._location(con, group_id, str(row["location_key"] or ""))
+            roster[self._location_display_name(loc, row)].append(str(row["game_name"]))
         for row in con.execute(
             """
             SELECT locations.name AS location_name, npcs.name AS name, npcs.role AS role, npcs.faction AS faction, npcs.disposition AS disposition

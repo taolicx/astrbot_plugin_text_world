@@ -22,7 +22,7 @@ from .core.service_v2 import TextWorldService
 from .core.webapp import WebPanel
 
 PLUGIN_NAME = "astrbot_plugin_text_world"
-PLUGIN_VERSION = "0.4.8"
+PLUGIN_VERSION = "0.4.9"
 PLUGIN_REPO = "https://github.com/taolicx/astrbot_plugin_text_world"
 
 MAP_IMAGE_FILES: tuple[str, ...] = (

@@ -38,6 +38,7 @@ class BatchNarrator:
                 "原作人物出现时保持克制，不能替玩家完成行动目标。",
                 "暗部、妹妹们、幻想御手、滞空回线、树状图设计者、魔法侧等核心线索只能写成公开传闻、异常痕迹或调查碎片，不能直接给出终局真相。",
                 "学舍之园、常盘台中学、研究所、没有窗户的大楼等地点有权限边界；程序没有允许时只能写外围、公开区或被拦下。",
+                "宿舍名称必须跟随程序私聊结果或角色身份：常盘台/学舍之园身份写常盘台校外宿舍或学舍之园相关宿舍，栅川身份写栅川学生宿舍，某高中身份写第七学区某高中学生寮；不要把所有宿舍都写成第七学区学生寮。",
                 "public_summary 只写参与玩家都可知道的大事件、新闻和传闻，不泄露个人私密行动；它默认会私聊给已审核玩家，不再发群。",
                 "player_results 的 key 必须保持 QQ 号不变。",
                 f"public_summary 控制在 {self.config.public_summary_max_chars} 字以内；每个 player_results 文本控制在 {self.config.private_result_max_chars} 字以内。",
@@ -45,7 +46,7 @@ class BatchNarrator:
                 "如果程序结果包含生命/精力下降、真实冲突、互殴、袭击或高风险受伤，要写出疼痛、失衡、出血、狼狈、治疗压力、警备风险等后果，不能写成小孩子过家家、玩闹或轻描淡写。",
                 "可以描写非露骨暴力后果，例如淤青、破口、血迹、眩晕、衣物损坏、被迫撤离、送医、风纪委员/警备员介入；不要写器官、肢解、虐待猎奇或为了血腥而血腥。",
                 "文字风格是《某魔法的禁书目录》学园都市同人群文游旁白，克制、有画面感，不自称 AI。",
-                "不要输出“无法满足”“不能描写”“未识别到特殊奖励”这类消极拒绝或程序解释；如果程序没有给奖励或伤害，就把它写成观察、等待、铺垫、错过线索、关系伏笔或下一轮可继续推进的结果。",
+                "不要输出“无法满足”“不能描写”“暂时没有明显骚动”“没有自动发展成正式事件”“未识别到特殊奖励”这类消极拒绝或程序解释；如果程序没有给奖励或伤害，就把它写成观察、等待、铺垫、错过线索、关系伏笔或下一轮可继续推进的结果。",
             ],
             "input": result,
             "output_schema": {
@@ -89,7 +90,10 @@ class BatchNarrator:
     def _clip_round_result(self, result: dict[str, Any]) -> dict[str, Any]:
         merged = dict(result)
         merged["public_summary"] = self._clip(
-            self._fallback_if_bad(merged.get("public_summary"), "【学园都市更新】\n本轮结算已完成，但公告文本生成异常。"),
+            self._fallback_if_bad(
+                merged.get("public_summary"),
+                "【学园都市更新】\n本轮结算已完成；公共新闻稿暂时转为程序简报，各玩家可查看私聊里的现场结果与下一轮线索。",
+            ),
             self.config.public_summary_max_chars,
         )
         private_results = merged.get("private_results") or {}
@@ -101,7 +105,10 @@ class BatchNarrator:
                     cleaned_results[str(qq)] = ""
                     continue
                 cleaned_results[str(qq)] = self._clip(
-                    self._fallback_if_bad(raw, "【个人结果】\n本轮结果已记录，但私聊文本生成异常，请联系管理员查看历史。"),
+                    self._fallback_if_bad(
+                        raw,
+                        "【个人结果】\n本轮结算已记录；当前位置、状态变化和周边线索已经进入历史，可作为下一轮行动依据。",
+                    ),
                     self.config.private_result_max_chars,
                 )
             merged["private_results"] = cleaned_results
